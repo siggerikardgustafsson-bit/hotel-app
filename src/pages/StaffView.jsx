@@ -48,6 +48,18 @@ function fmtFull(d)    { return format(parseISO(d), 'd MMM yyyy', { locale: sv }
 function sortRooms(r)  { return [...r].sort((a, b) => parseInt(a.id) - parseInt(b.id)) }
 function ds(d)         { return format(d, 'yyyy-MM-dd') }
 
+function isLongTermActive(room, date) {
+  if (!room?.long_term_enabled) return false
+  const d = typeof date === 'string' ? date : ds(date)
+  const start = room.long_term_start || '0000-01-01'
+  const end = room.long_term_end || '9999-12-31'
+  return d >= start && d <= end
+}
+
+function isLongTermActiveInDays(room, days) {
+  return days.some(d => isLongTermActive(room, d))
+}
+
 const NUM_DAYS = 7
 const ROW_HEIGHT = 68
 const ROOM_COL_PCT = 13
@@ -115,6 +127,14 @@ export default function StaffView() {
   const checkins = bookings.filter(b => b.checkin === todayStr && b.room_id)
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr && b.room_id)
   const cleanDone = checkouts.filter(b => housekeeping[`${b.room_id}_${todayStr}`]?.cleaning_status === 'done').length
+  const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
+  const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
+  const staffDisplayRooms = [...rooms].sort((a, b) => {
+    const aLong = isLongTermActiveInDays(a, days) ? 1 : 0
+    const bLong = isLongTermActiveInDays(b, days) ? 1 : 0
+    if (aLong !== bLong) return aLong - bLong
+    return parseInt(a.id, 10) - parseInt(b.id, 10)
+  })
 
   const gridW = calWidth * (1 - ROOM_COL_PCT / 100)
   const dayW = gridW / NUM_DAYS
@@ -150,7 +170,6 @@ export default function StaffView() {
     if (checkoutHK?.checkout_done) {
       return {
         label: 'Utcheckad',
-        short: 'Ut',
         color: 'rgba(55, 184, 122, 0.92)',
         bg: 'rgba(55, 184, 122, 0.18)',
       }
@@ -159,7 +178,6 @@ export default function StaffView() {
     if (checkinHK?.checkin_done) {
       return {
         label: 'Incheckad',
-        short: 'In',
         color: 'rgba(79, 141, 247, 0.92)',
         bg: 'rgba(79, 141, 247, 0.18)',
       }
@@ -167,7 +185,6 @@ export default function StaffView() {
 
     return {
       label: 'Ej markerad',
-      short: '–',
       color: 'rgba(143, 160, 181, 0.72)',
       bg: 'rgba(143, 160, 181, 0.14)',
     }
@@ -226,6 +243,7 @@ export default function StaffView() {
               <StatTile icon="✓" label="Städning klar" value={`${cleanDone} / ${checkouts.length}`} color={C.green} done={cleanDone === checkouts.length && checkouts.length > 0} />
               <StatTile icon="↓" label="Incheckningar" value={checkins.length} color={C.blue} />
               <StatTile icon="●" label="Bor kvar" value={stays.length} color={C.purple} />
+              <StatTile icon="⌂" label="Långtidsboende" value={longTermToday.length} color={C.amber} />
             </div>
 
             <TodaySection label="Utcheckningar & städning" count={checkouts.length} color={C.red}>
@@ -280,6 +298,16 @@ export default function StaffView() {
                     <TodayCard key={b.id} b={b} rooms={rooms} type="stay" color={C.purple} onClick={() => setModal(b)} />
                   ))}
             </TodaySection>
+
+            {longTermToday.length > 0 && (
+              <TodaySection label="Långtidsboende" count={longTermToday.length} color={C.amber}>
+                {longTermToday.map(room => (
+                  <LongTermRoomCard key={room.id} room={room} />
+                ))}
+              </TodaySection>
+            )}
+
+
           </div>
         )}
 
@@ -295,6 +323,13 @@ export default function StaffView() {
               </div>
               <button style={cal.navBtn} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
             </div>
+
+            {longTermWeek.length > 0 && (
+              <div style={cal.longTermBanner}>
+                <span style={{ fontWeight: 800 }}>Långtidsboende denna vecka:</span>{' '}
+                {longTermWeek.map(r => r.name).join(', ')}
+              </div>
+            )}
 
             <div ref={setCalRef} style={cal.wrap}>
               <div style={cal.headerRow}>
@@ -323,13 +358,14 @@ export default function StaffView() {
                 })}
               </div>
 
-              {rooms.map(room => {
+              {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
                 return (
                   <div key={room.id} style={cal.row}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
+                      {isLongTermActiveInDays(room, days) && <span style={cal.longTermMini}>Långtidsboende</span>}
                     </div>
 
                     <div style={{ position: 'relative', flex: 1, height: '100%' }}>
@@ -337,6 +373,9 @@ export default function StaffView() {
                         <React.Fragment key={i}>
                           {i > 0 && (
                             <div style={{ position: 'absolute', left: i * dayW, top: 0, bottom: 0, width: 1, background: C.line, pointerEvents: 'none' }} />
+                          )}
+                          {isLongTermActive(room, d) && (
+                            <div style={{ position: 'absolute', left: i * dayW, width: dayW, top: 0, bottom: 0, background: 'rgba(246,183,60,0.10)', pointerEvents: 'none' }} />
                           )}
                           {isSameDay(d, TODAY) && (
                             <div style={{ position: 'absolute', left: i * dayW, width: dayW, top: 0, bottom: 0, background: C.blueSoft2, pointerEvents: 'none' }} />
@@ -414,7 +453,7 @@ export default function StaffView() {
             </div>
 
             <div style={cal.legend}>
-              {[[C.block, 'Bokning'], [C.blockDone, 'Städat'], [C.amber, '● Meddelande']].map(([color, label]) => (
+              {[[C.block, 'Bokning'], [C.blockDone, 'Städat'], ['rgba(246,183,60,0.18)', 'Långtidsboende'], [C.amber, '● Meddelande']].map(([color, label]) => (
                 <div key={label} style={cal.legendItem}>
                   {label.startsWith('●')
                     ? <span style={{ color, fontSize: 11 }}>●</span>
@@ -557,6 +596,31 @@ function TodaySection({ label, count, color, children }) {
         <span style={p.sectionCount}>{count}</span>
       </div>
       {children}
+    </div>
+  )
+}
+
+function LongTermRoomCard({ room }) {
+  const period = room.long_term_end
+    ? `${room.long_term_start || 'nu'} → ${room.long_term_end}`
+    : `${room.long_term_start || 'nu'} → tills vidare`
+
+  return (
+    <div style={{ ...p.card, boxShadow: `${C.shadowSoft}, inset 0 1px 0 rgba(246,183,60,0.22)` }}>
+      <div style={p.cardTop}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <span style={p.cardRoom}>{room.name}</span>
+          <span style={p.cardType}>{room.type}</span>
+        </div>
+        <span style={{ ...p.cardBadge, background: C.amberSoft, color: '#9a7118' }}>Långtidsboende</span>
+      </div>
+      <div style={p.cardTimes}>{period}</div>
+      {room.long_term_note && (
+        <div style={p.remark}>
+          <span style={{ color: C.amber, marginRight: 6, fontSize: 10 }}>●</span>
+          {room.long_term_note}
+        </div>
+      )}
     </div>
   )
 }
@@ -707,7 +771,7 @@ const p = {
     padding: '10px 14px', borderRadius: 999, background: 'rgba(255,255,255,0.62)', color: C.muted,
     fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.66)', boxShadow: C.shadowSoft
   },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 32 },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 14, marginBottom: 32 },
   statTile: {
     ...glassPanel,
     borderRadius: 24,
@@ -767,6 +831,27 @@ const cal = {
   },
   roomName: { fontSize: 13, fontWeight: 700, color: C.text },
   roomType: { fontSize: 11, color: C.faint, marginTop: 3 },
+  longTermMini: {
+    display: 'inline-block',
+    marginTop: 6,
+    padding: '3px 7px',
+    borderRadius: 999,
+    background: 'rgba(246,183,60,0.18)',
+    color: '#9a7118',
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  },
+  longTermBanner: {
+    ...glassPanel,
+    background: 'rgba(255,248,220,0.68)',
+    borderRadius: 18,
+    padding: '11px 14px',
+    margin: '-8px 0 16px',
+    color: '#8a6416',
+    fontSize: 13,
+    fontWeight: 600,
+  },
   bookingName: { fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   bookingSub: { fontSize: 10, color: 'rgba(255,255,255,0.86)', marginTop: 2, whiteSpace: 'nowrap' },
   bookingRemarkDot: { fontSize: 9, color: '#fff3b0', flexShrink: 0 },
