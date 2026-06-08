@@ -1,0 +1,29 @@
+import React from 'react'
+import { AuthProvider, useAuth } from './lib/auth'
+import Login from './pages/Login'
+import AdminView from './pages/AdminView'
+import StaffView from './pages/StaffView'
+
+function AppInner() {
+  const { user, isAdmin, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', fontSize: 14 }}>
+        Laddar...
+      </div>
+    )
+  }
+
+  if (!user) return <Login />
+  if (isAdmin) return <AdminView />
+  return <StaffView />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  )
+}
