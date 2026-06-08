@@ -115,7 +115,7 @@ export default function StaffView() {
   async function toggleCleaning(roomId, date) {
     const key = `${roomId}_${date}`
     const cur = housekeeping[key]
-    const next = cur?.cleaning_status === 'done' ? 'pending' : 'done'
+    const next = !cur ? 'in_progress' : cur.cleaning_status === 'in_progress' ? 'done' : 'pending'
     await upsertHK(roomId, date, { cleaning_status: next })
   }
 
@@ -146,7 +146,10 @@ export default function StaffView() {
       if (b.room_id !== roomId || !b.checkin || !b.checkout) return false
       const ci = parseISO(b.checkin)
       const co = parseISO(b.checkout)
-      return co > weekStart && ci < weekEnd
+
+      // Include bookings that check out on the first visible day.
+      // Example: söndag → måndag should show as a left-edge continuation on Monday.
+      return co >= weekStart && ci < weekEnd
     })
   }
 
@@ -156,38 +159,15 @@ export default function StaffView() {
     const ciIdx = differenceInDays(ci, weekStart)
     const coIdx = differenceInDays(co, weekStart)
     const startsBeforeWeek = ciIdx < 0
-    const endsAfterWeek = coIdx > NUM_DAYS
+
+    // If checkout is exactly the day after the visible week, the booking should
+    // still run to the right edge of the current week with a straight edge.
+    const endsAfterWeek = coIdx >= NUM_DAYS
+
     const startX = startsBeforeWeek ? 0 : ciIdx * dayW + half
     const endX = endsAfterWeek ? NUM_DAYS * dayW : coIdx * dayW + half
     if (endX <= startX) return null
     return { left: startX, width: endX - startX, booking: b, startsBeforeWeek, endsAfterWeek }
-  }
-
-  function getBookingStaffStatus(roomId, booking) {
-    const checkinHK = housekeeping[`${roomId}_${booking.checkin}`]
-    const checkoutHK = housekeeping[`${roomId}_${booking.checkout}`]
-
-    if (checkoutHK?.checkout_done) {
-      return {
-        label: 'Utcheckad',
-        color: 'rgba(55, 184, 122, 0.92)',
-        bg: 'rgba(55, 184, 122, 0.18)',
-      }
-    }
-
-    if (checkinHK?.checkin_done) {
-      return {
-        label: 'Incheckad',
-        color: 'rgba(79, 141, 247, 0.92)',
-        bg: 'rgba(79, 141, 247, 0.18)',
-      }
-    }
-
-    return {
-      label: 'Ej markerad',
-      color: 'rgba(143, 160, 181, 0.72)',
-      bg: 'rgba(143, 160, 181, 0.14)',
-    }
   }
 
   return (
@@ -246,6 +226,14 @@ export default function StaffView() {
               <StatTile icon="⌂" label="Långtidsboende" value={longTermToday.length} color={C.amber} />
             </div>
 
+            {longTermToday.length > 0 && (
+              <TodaySection label="Långtidsboende" count={longTermToday.length} color={C.amber}>
+                {longTermToday.map(room => (
+                  <LongTermRoomCard key={room.id} room={room} />
+                ))}
+              </TodaySection>
+            )}
+
             <TodaySection label="Utcheckningar & städning" count={checkouts.length} color={C.red}>
               {checkouts.length === 0
                 ? <Empty text="Inga utcheckningar idag" />
@@ -298,16 +286,6 @@ export default function StaffView() {
                     <TodayCard key={b.id} b={b} rooms={rooms} type="stay" color={C.purple} onClick={() => setModal(b)} />
                   ))}
             </TodaySection>
-
-            {longTermToday.length > 0 && (
-              <TodaySection label="Långtidsboende" count={longTermToday.length} color={C.amber}>
-                {longTermToday.map(room => (
-                  <LongTermRoomCard key={room.id} room={room} />
-                ))}
-              </TodaySection>
-            )}
-
-
           </div>
         )}
 
@@ -384,9 +362,8 @@ export default function StaffView() {
                       ))}
 
                       {pixels.map(({ left, width, booking, startsBeforeWeek, endsAfterWeek }) => {
-                        const checkoutHK = housekeeping[`${room.id}_${booking.checkout}`]
-                        const cleaned = checkoutHK?.cleaning_status === 'done'
-                        const status = getBookingStaffStatus(room.id, booking)
+                        const hk = housekeeping[`${room.id}_${booking.checkin}`]
+                        const cleaned = hk?.cleaning_status === 'done'
                         const hasRemark = !!booking.remarks
                         const nights = differenceInDays(parseISO(booking.checkout), parseISO(booking.checkin))
                         const firstName = booking.guest_name?.split(' ')[0] || ''
@@ -416,7 +393,7 @@ export default function StaffView() {
                               padding: '0 12px',
                               overflow: 'hidden',
                               userSelect: 'none',
-                              boxShadow: `0 8px 22px rgba(66, 99, 170, 0.14), inset 0 -4px 0 ${status.color}`,
+                              boxShadow: '0 8px 22px rgba(66, 99, 170, 0.14)',
                               backdropFilter: 'blur(12px)',
                               WebkitBackdropFilter: 'blur(12px)',
                               transition: 'transform 0.14s ease, opacity 0.14s ease',
@@ -430,11 +407,10 @@ export default function StaffView() {
                               e.currentTarget.style.transform = 'translateY(0)'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, paddingRight: 22 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                               <span style={cal.bookingName}>{firstName}</span>
                               {hasRemark && <span style={cal.bookingRemarkDot}>●</span>}
                             </div>
-                            <div title={status.label} style={{ ...cal.bookingStatusDot, background: status.bg, borderColor: status.color }} />
                             {startsBeforeWeek && <div style={cal.continuesLeft} />}
                             {endsAfterWeek && <div style={cal.continuesRight} />}
 
@@ -855,17 +831,6 @@ const cal = {
   bookingName: { fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   bookingSub: { fontSize: 10, color: 'rgba(255,255,255,0.86)', marginTop: 2, whiteSpace: 'nowrap' },
   bookingRemarkDot: { fontSize: 9, color: '#fff3b0', flexShrink: 0 },
-  bookingStatusDot: {
-    position: 'absolute',
-    right: 9,
-    top: 9,
-    width: 9,
-    height: 9,
-    borderRadius: '50%',
-    border: '2px solid rgba(255,255,255,0.88)',
-    boxShadow: '0 1px 5px rgba(30,40,60,0.16)',
-    pointerEvents: 'auto',
-  },
   continuesLeft: {
     position: 'absolute',
     left: 0,
