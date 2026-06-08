@@ -40,6 +40,20 @@ const NUM_DAYS = 7
 const ROW_HEIGHT = 68
 const ROOM_COL_PCT = 13
 
+
+function useIsMobile() {
+  const get = () => (typeof window !== 'undefined' ? window.innerWidth <= 760 : false)
+  const [isMobile, setIsMobile] = useState(get)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(get())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  return isMobile
+}
+
 const glassPanel = {
   background: 'rgba(255,255,255,0.64)',
   border: '1px solid rgba(255,255,255,0.72)',
@@ -62,6 +76,7 @@ export default function AdminView() {
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     loadRooms(); loadBookings(); fetchHousekeeping()
@@ -221,7 +236,8 @@ export default function AdminView() {
     return parseInt(a.id, 10) - parseInt(b.id, 10)
   })
 
-  const gridW = calWidth * (1 - ROOM_COL_PCT / 100)
+  const calendarBaseWidth = isMobile ? Math.max(calWidth, 860) : calWidth
+  const gridW = calendarBaseWidth * (1 - ROOM_COL_PCT / 100)
   const dayW = gridW / NUM_DAYS
   const half = dayW / 2
 
@@ -231,7 +247,7 @@ export default function AdminView() {
       if (b.room_id !== roomId || !b.checkin || !b.checkout) return false
       const ci = parseISO(b.checkin)
       const co = parseISO(b.checkout)
-      return co > weekStart && ci < weekEnd
+      return co >= weekStart && ci < weekEnd
     })
   }
 
@@ -241,7 +257,7 @@ export default function AdminView() {
     const ciIdx = differenceInDays(ci, weekStart)
     const coIdx = differenceInDays(co, weekStart)
     const startsBeforeWeek = ciIdx < 0
-    const endsAfterWeek = coIdx > NUM_DAYS
+    const endsAfterWeek = coIdx >= NUM_DAYS
     const startX = startsBeforeWeek ? 0 : ciIdx * dayW + half
     const endX = endsAfterWeek ? NUM_DAYS * dayW : coIdx * dayW + half
     if (endX <= startX) return null
@@ -249,7 +265,7 @@ export default function AdminView() {
   }
 
   return (
-    <div style={s.page}>
+    <div style={{ ...s.page, ...(isMobile ? s.pageMobile : {}) }}>
 
       {modal && (
         <DetailModal
@@ -270,31 +286,31 @@ export default function AdminView() {
         />
       )}
 
-      <div style={s.topbar}>
+      <div style={{ ...s.topbar, ...(isMobile ? s.topbarMobile : {}) }}>
         <div>
-          <span style={s.hotelName}>Hotell Vänersborg</span>
+          <span style={{ ...s.hotelName, ...(isMobile ? s.hotelNameMobile : {}) }}>Hotell Vänersborg</span>
           <span style={s.adminBadge}>Admin</span>
         </div>
-        <div style={s.tabs}>
+        <div style={{ ...s.tabs, ...(isMobile ? s.tabsMobile : {}) }}>
           <TabBtn label="Kalender" active={tab==='calendar'} onClick={() => setTab('calendar')} />
           <TabBtn label="Bokningar" active={tab==='bookings'} onClick={() => setTab('bookings')} />
           <TabBtn label="Importera XLS" active={tab==='import'} onClick={() => setTab('import')} badge={importPreview.length || null} />
           <TabBtn label="Rum" active={tab==='rooms'} onClick={() => setTab('rooms')} />
-          <button style={s.signoutBtn} onClick={signOut}>Logga ut</button>
+          <button style={{ ...s.signoutBtn, ...(isMobile ? s.signoutBtnMobile : {}) }} onClick={signOut}>Logga ut</button>
         </div>
       </div>
 
       {tab === 'calendar' && (
         <div>
-          <div style={ac.viewHeader}>
-            <button style={ac.navBtn} onClick={() => setWeekStart(d => addDays(d, -7))}>← Föregående</button>
-            <div style={ac.titleWrap}>
+          <div style={{ ...ac.viewHeader, ...(isMobile ? ac.viewHeaderMobile : {}) }}>
+            <button style={{ ...ac.navBtn, ...(isMobile ? ac.navBtnMobile : {}) }} onClick={() => setWeekStart(d => addDays(d, -7))}>← Föregående</button>
+            <div style={{ ...ac.titleWrap, ...(isMobile ? ac.titleWrapMobile : {}) }}>
               <div style={ac.kicker}>Admin · veckoöversikt</div>
-              <div style={ac.title}>
+              <div style={{ ...ac.title, ...(isMobile ? ac.titleMobile : {}) }}>
                 {format(weekStart, 'd MMM', { locale: sv })} – {format(addDays(weekStart, 6), 'd MMM yyyy', { locale: sv })}
               </div>
             </div>
-            <button style={ac.navBtn} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
+            <button style={{ ...ac.navBtn, ...(isMobile ? ac.navBtnMobile : {}) }} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
           </div>
 
           {unassigned.length > 0 && (
@@ -307,13 +323,13 @@ export default function AdminView() {
           )}
 
           {longTermRooms.length > 0 && (
-            <div style={ac.longTermBanner}>
+            <div style={{ ...ac.longTermBanner, ...(isMobile ? ac.longTermBannerMobile : {}) }}>
               <strong>Långtidsboende denna vecka:</strong> {longTermRooms.map(r => r.name).join(', ')}
             </div>
           )}
 
-          <div ref={setCalRef} style={ac.wrap}>
-            <div style={ac.headerRow}>
+          <div ref={setCalRef} style={{ ...ac.wrap, ...(isMobile ? ac.wrapMobile : {}) }}>
+            <div style={{ ...ac.headerRow, minWidth: calendarBaseWidth }}>
               <div style={{ width: `${ROOM_COL_PCT}%`, flexShrink: 0, borderRight: '1px solid rgba(119,136,153,0.18)' }} />
               {days.map((d, i) => {
                 const isToday = isSameDay(d, TODAY)
@@ -339,7 +355,7 @@ export default function AdminView() {
             {adminDisplayRooms.map(room => {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
               return (
-                <div key={room.id} style={ac.row}>
+                <div key={room.id} style={{ ...ac.row, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
@@ -429,7 +445,7 @@ export default function AdminView() {
 
       {tab === 'bookings' && (
         <div>
-          <div style={s.statsRow}>
+          <div style={{ ...s.statsRow, ...(isMobile ? s.statsRowMobile : {}) }}>
             <StatCard label="Totalt" value={bookings.length} />
             <StatCard label="Tilldelade rum" value={assigned.length} accent />
             <StatCard label="Ej tilldelade" value={unassigned.length} warn={unassigned.length > 0} />
@@ -814,7 +830,7 @@ function BookingRow({ b, rooms, onAssign, onDelete, saving, showRoom, onInfo }) 
 
 function TabBtn({ label, active, onClick, badge }) {
   return (
-    <button style={{ ...s.tabBtn, ...(active ? s.tabBtnActive : {}) }} onClick={onClick}>
+    <button style={{ ...s.tabBtn, ...(typeof window !== 'undefined' && window.innerWidth <= 760 ? s.tabBtnMobile : {}), ...(active ? s.tabBtnActive : {}) }} onClick={onClick}>
       {label}
       {badge ? <span style={s.tabBadge}>{badge}</span> : null}
     </button>
@@ -833,15 +849,21 @@ const Th = ({ children }) => <th style={s.th}>{children}</th>
 const Td = ({ children, style }) => <td style={{ ...s.td, ...style }}>{children}</td>
 
 const s = {
-  page: { maxWidth: 1180, margin: '0 auto', padding: '0 16px 80px', fontFamily: 'system-ui, sans-serif' },
+  page: { maxWidth: 1180, margin: '0 auto', padding: '0 16px 80px', fontFamily: 'system-ui, sans-serif', overflowX: 'hidden' },
+  pageMobile: { padding: '0 14px 72px' },
   topbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0 12px', borderBottom: '1px solid #eee', marginBottom: 20, flexWrap: 'wrap', gap: 8 },
+  topbarMobile: { alignItems: 'flex-start', flexDirection: 'column', gap: 12, paddingTop: 18 },
   hotelName: { fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginRight: 8 },
+  hotelNameMobile: { fontSize: 24, display: 'inline-block', marginBottom: 6 },
   adminBadge: { fontSize: 10, fontWeight: 600, background: '#1a1a1a', color: '#fff', padding: '2px 7px', borderRadius: 20 },
   tabs: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' },
+  tabsMobile: { width: '100%', gap: 8 },
   tabBtn: { padding: '6px 14px', border: '1px solid #ddd', borderRadius: 7, background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#666', position: 'relative' },
+  tabBtnMobile: { padding: '10px 14px', fontSize: 15, borderRadius: 10 },
   tabBtnActive: { background: '#1a1a1a', color: '#fff', borderColor: '#1a1a1a' },
   tabBadge: { position: 'absolute', top: -6, right: -6, background: '#e74c3c', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 10, minWidth: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' },
   signoutBtn: { fontSize: 12, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#888', marginLeft: 8 },
+  signoutBtnMobile: { marginLeft: 0, padding: '10px 14px', fontSize: 15, borderRadius: 10 },
   weekNav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   weekLabel: { fontSize: 14, fontWeight: 500, color: '#333' },
   navBtn: { fontSize: 13, padding: '5px 12px', border: '1px solid #ddd', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#555' },
@@ -863,6 +885,7 @@ const s = {
   legend: { display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' },
   legendItem: { display: 'flex', alignItems: 'center', gap: 5 },
   statsRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 },
+  statsRowMobile: { gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 },
   statCard: { background: '#f7f6f2', borderRadius: 8, padding: '14px 16px' },
   statAccent: { background: '#eaf3de' },
   statWarn: { background: '#fdf8f2' },
@@ -871,7 +894,7 @@ const s = {
   section: { marginBottom: 28 },
   sectionTitle: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#888', marginBottom: 10 },
   tableWrap: { overflowX: 'auto', borderRadius: 8, border: '1px solid #e8e5df' },
-  table: { borderCollapse: 'collapse', width: '100%', fontSize: 13 },
+  table: { borderCollapse: 'collapse', width: '100%', minWidth: 760, fontSize: 13 },
   th: { padding: '8px 12px', background: '#fafaf8', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#888', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' },
   tr: { borderBottom: '1px solid #f0ede7' },
   td: { padding: '10px 12px', verticalAlign: 'middle', color: '#333' },
@@ -915,9 +938,12 @@ const ac = {
     flexWrap: 'wrap',
     background: 'rgba(255,255,255,0.68)',
   },
+  viewHeaderMobile: { borderRadius: 26, padding: '22px 20px', alignItems: 'flex-start', flexDirection: 'column', gap: 16 },
   titleWrap: { textAlign: 'center', flex: 1, minWidth: 280 },
+  titleWrapMobile: { textAlign: 'left', minWidth: 0, width: '100%', order: -1 },
   kicker: { fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#8fa0b5', fontWeight: 700, marginBottom: 8 },
   title: { fontSize: 32, fontWeight: 750, color: '#18212f', letterSpacing: '-0.03em' },
+  titleMobile: { fontSize: 30, lineHeight: 1.05 },
   navBtn: {
     fontSize: 14,
     padding: '11px 18px',
@@ -929,6 +955,7 @@ const ac = {
     fontWeight: 600,
     boxShadow: '0 8px 24px rgba(86, 104, 140, 0.10)',
   },
+  navBtnMobile: { padding: '10px 14px', fontSize: 13 },
   longTermBanner: {
     ...glassPanel,
     background: 'rgba(255,248,220,0.68)',
@@ -939,7 +966,9 @@ const ac = {
     fontSize: 13,
     fontWeight: 600,
   },
-  wrap: { ...glassPanel, borderRadius: 28, overflow: 'hidden', width: '100%', background: 'rgba(255,255,255,0.64)' },
+  longTermBannerMobile: { fontSize: 12, lineHeight: 1.45, margin: '-4px 0 14px' },
+  wrap: { ...glassPanel, borderRadius: 28, overflowX: 'auto', overflowY: 'hidden', width: '100%', background: 'rgba(255,255,255,0.64)', WebkitOverflowScrolling: 'touch' },
+  wrapMobile: { borderRadius: 24 },
   headerRow: { display: 'flex', borderBottom: '1px solid rgba(119,136,153,0.28)', background: 'rgba(255,255,255,0.28)' },
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },

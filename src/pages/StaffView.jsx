@@ -64,6 +64,20 @@ const NUM_DAYS = 7
 const ROW_HEIGHT = 68
 const ROOM_COL_PCT = 13
 
+
+function useIsMobile() {
+  const get = () => (typeof window !== 'undefined' ? window.innerWidth <= 760 : false)
+  const [isMobile, setIsMobile] = useState(get)
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(get())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  return isMobile
+}
+
 const glassPanel = {
   background: C.glass,
   border: `1px solid ${C.border}`,
@@ -81,6 +95,7 @@ export default function StaffView() {
   const [modal, setModal] = useState(null)
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     supabase.from('rooms').select('*').then(({ data }) => setRooms(sortRooms(data || [])))
@@ -126,7 +141,10 @@ export default function StaffView() {
   const checkouts = bookings.filter(b => b.checkout === todayStr && b.room_id)
   const checkins = bookings.filter(b => b.checkin === todayStr && b.room_id)
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr && b.room_id)
-  const cleanDone = checkouts.filter(b => housekeeping[`${b.room_id}_${todayStr}`]?.cleaning_status === 'done').length
+  const cleanDone = checkouts.filter(b => {
+    const hk = housekeeping[`${b.room_id}_${todayStr}`]
+    return hk?.cleaning_status === 'done' || hk?.checkout_done
+  }).length
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
   const staffDisplayRooms = [...rooms].sort((a, b) => {
@@ -136,7 +154,8 @@ export default function StaffView() {
     return parseInt(a.id, 10) - parseInt(b.id, 10)
   })
 
-  const gridW = calWidth * (1 - ROOM_COL_PCT / 100)
+  const calendarBaseWidth = isMobile ? Math.max(calWidth, 860) : calWidth
+  const gridW = calendarBaseWidth * (1 - ROOM_COL_PCT / 100)
   const dayW = gridW / NUM_DAYS
   const half = dayW / 2
 
@@ -190,35 +209,35 @@ export default function StaffView() {
 
       <div style={n.navShell}>
         <div style={n.nav}>
-          <div style={n.navInner}>
+          <div style={{ ...n.navInner, ...(isMobile ? n.navInnerMobile : {}) }}>
             <div>
-              <div style={n.logo}>Hotell Vänersborg</div>
-              <div style={n.logoSub}>Personalyta · bokningar · städstatus</div>
+              <div style={{ ...n.logo, ...(isMobile ? n.logoMobile : {}) }}>Hotell Vänersborg</div>
+              <div style={{ ...n.logoSub, ...(isMobile ? n.logoSubMobile : {}) }}>Personalyta · bokningar · städstatus</div>
             </div>
 
-            <div style={n.navRight}>
-              <div style={n.tabs}>
-                <button style={{ ...n.tab, ...(view === 'today' ? n.tabActive : {}) }} onClick={() => setView('today')}>Idag</button>
-                <button style={{ ...n.tab, ...(view === 'week' ? n.tabActive : {}) }} onClick={() => setView('week')}>Kalender</button>
+            <div style={{ ...n.navRight, ...(isMobile ? n.navRightMobile : {}) }}>
+              <div style={{ ...n.tabs, ...(isMobile ? n.tabsMobile : {}) }}>
+                <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'today' ? n.tabActive : {}) }} onClick={() => setView('today')}>Idag</button>
+                <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'week' ? n.tabActive : {}) }} onClick={() => setView('week')}>Kalender</button>
               </div>
-              <button style={n.signout} onClick={signOut}>Logga ut</button>
+              <button style={{ ...n.signout, ...(isMobile ? n.signoutMobile : {}) }} onClick={signOut}>Logga ut</button>
             </div>
           </div>
         </div>
       </div>
 
-      <div style={n.content}>
+      <div style={{ ...n.content, ...(isMobile ? n.contentMobile : {}) }}>
         {view === 'today' && (
           <div>
-            <div style={p.viewHeader}>
+            <div style={{ ...p.viewHeader, ...(isMobile ? p.viewHeaderMobile : {}) }}>
               <div>
                 <div style={p.kicker}>Översikt idag</div>
-                <div style={p.dateText}>{todayFmt}</div>
+                <div style={{ ...p.dateText, ...(isMobile ? p.dateTextMobile : {}) }}>{todayFmt}</div>
               </div>
-              <div style={p.heroChip}>Fokus för personalen idag</div>
+              <div style={{ ...p.heroChip, ...(isMobile ? p.heroChipMobile : {}) }}>Fokus för personalen idag</div>
             </div>
 
-            <div style={p.statsGrid}>
+            <div style={{ ...p.statsGrid, ...(isMobile ? p.statsGridMobile : {}) }}>
               <StatTile icon="↑" label="Utcheckningar" value={checkouts.length} color={C.red} />
               <StatTile icon="✓" label="Städning klar" value={`${cleanDone} / ${checkouts.length}`} color={C.green} done={cleanDone === checkouts.length && checkouts.length > 0} />
               <StatTile icon="↓" label="Incheckningar" value={checkins.length} color={C.blue} />
@@ -291,26 +310,26 @@ export default function StaffView() {
 
         {view === 'week' && (
           <div>
-            <div style={p.viewHeader}>
-              <button style={cal.navBtn} onClick={() => setWeekStart(d => addDays(d, -7))}>← Föregående</button>
-              <div style={cal.titleWrap}>
+            <div style={{ ...p.viewHeader, ...(isMobile ? p.viewHeaderMobile : {}) }}>
+              <button style={{ ...cal.navBtn, ...(isMobile ? cal.navBtnMobile : {}) }} onClick={() => setWeekStart(d => addDays(d, -7))}>← Föregående</button>
+              <div style={{ ...cal.titleWrap, ...(isMobile ? cal.titleWrapMobile : {}) }}>
                 <div style={cal.kicker}>Veckoöversikt</div>
-                <span style={cal.title}>
+                <span style={{ ...cal.title, ...(isMobile ? cal.titleMobile : {}) }}>
                   {format(weekStart, 'd MMM', { locale: sv })} – {format(addDays(weekStart, 6), 'd MMM yyyy', { locale: sv })}
                 </span>
               </div>
-              <button style={cal.navBtn} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
+              <button style={{ ...cal.navBtn, ...(isMobile ? cal.navBtnMobile : {}) }} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
             </div>
 
             {longTermWeek.length > 0 && (
-              <div style={cal.longTermBanner}>
+              <div style={{ ...cal.longTermBanner, ...(isMobile ? cal.longTermBannerMobile : {}) }}>
                 <span style={{ fontWeight: 800 }}>Långtidsboende denna vecka:</span>{' '}
                 {longTermWeek.map(r => r.name).join(', ')}
               </div>
             )}
 
-            <div ref={setCalRef} style={cal.wrap}>
-              <div style={cal.headerRow}>
+            <div ref={setCalRef} style={{ ...cal.wrap, ...(isMobile ? cal.wrapMobile : {}) }}>
+              <div style={{ ...cal.headerRow, minWidth: calendarBaseWidth }}>
                 <div style={{ width: `${ROOM_COL_PCT}%`, flexShrink: 0, borderRight: `1px solid ${C.line}` }} />
                 {days.map((d, i) => {
                   const isToday = isSameDay(d, TODAY)
@@ -339,7 +358,7 @@ export default function StaffView() {
               {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
                 return (
-                  <div key={room.id} style={cal.row}>
+                  <div key={room.id} style={{ ...cal.row, minWidth: calendarBaseWidth }}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
@@ -668,7 +687,8 @@ const s = {
     minHeight: '100vh',
     background: `linear-gradient(180deg, ${C.bgTop} 0%, ${C.bgBottom} 100%)`,
     position: 'relative',
-    overflow: 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
   bgBlobOne: {
     position: 'fixed', top: -140, right: -80, width: 340, height: 340, borderRadius: '50%',
@@ -691,6 +711,7 @@ const n = {
     maxWidth: 1380, margin: '0 auto', padding: '14px 24px',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap'
   },
+  navInnerMobile: { padding: '22px 22px 24px', alignItems: 'flex-start', flexDirection: 'column', gap: 18 },
   logo: {
     fontFamily: "'Playfair Display', Georgia, serif",
     fontSize: 32,
@@ -700,7 +721,10 @@ const n = {
     lineHeight: 1,
   },
   logoSub: { marginTop: 5, fontSize: 13, color: C.muted, fontWeight: 600 },
+  logoMobile: { fontSize: 34, lineHeight: 1.02 },
+  logoSubMobile: { fontSize: 14, lineHeight: 1.35 },
   navRight: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  navRightMobile: { width: '100%', alignItems: 'flex-start', flexDirection: 'column', gap: 12 },
   tabs: {
     display: 'flex',
     background: 'rgba(255,255,255,0.52)',
@@ -711,10 +735,12 @@ const n = {
     backdropFilter: 'blur(16px)',
     WebkitBackdropFilter: 'blur(16px)',
   },
+  tabsMobile: { width: '100%', maxWidth: 360, justifyContent: 'space-between' },
   tab: {
     padding: '10px 18px', border: 'none', background: 'transparent', borderRadius: 999,
     fontSize: 14, cursor: 'pointer', color: C.muted, fontWeight: 600, minWidth: 104,
   },
+  tabMobile: { minWidth: 0, flex: 1, padding: '12px 14px', fontSize: 15 },
   tabActive: {
     background: 'rgba(255,255,255,0.86)',
     color: C.text,
@@ -725,7 +751,9 @@ const n = {
     background: 'rgba(255,255,255,0.6)', cursor: 'pointer', color: C.muted, fontWeight: 600,
     boxShadow: C.shadowSoft, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)'
   },
+  signoutMobile: { padding: '12px 18px', fontSize: 15 },
   content: { maxWidth: 1380, margin: '0 auto', padding: '26px 24px 88px', position: 'relative', zIndex: 1 },
+  contentMobile: { padding: '18px 14px 72px' },
 }
 
 const p = {
@@ -741,13 +769,17 @@ const p = {
     flexWrap: 'wrap',
     background: 'rgba(255,255,255,0.68)',
   },
+  viewHeaderMobile: { borderRadius: 26, padding: '24px 22px', alignItems: 'flex-start', flexDirection: 'column', gap: 18 },
   kicker: { fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.faint, fontWeight: 700, marginBottom: 10 },
   dateText: { fontSize: 32, fontWeight: 750, color: C.text, letterSpacing: '-0.03em', textTransform: 'capitalize', lineHeight: 1.1 },
+  dateTextMobile: { fontSize: 32, maxWidth: 310 },
   heroChip: {
     padding: '10px 14px', borderRadius: 999, background: 'rgba(255,255,255,0.62)', color: C.muted,
     fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.66)', boxShadow: C.shadowSoft
   },
+  heroChipMobile: { fontSize: 14, padding: '12px 16px' },
   statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 14, marginBottom: 32 },
+  statsGridMobile: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 },
   statTile: {
     ...glassPanel,
     borderRadius: 24,
@@ -787,14 +819,18 @@ const p = {
 const cal = {
   nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 18, flexWrap: 'wrap' },
   titleWrap: { textAlign: 'center', flex: 1, minWidth: 280 },
+  titleWrapMobile: { minWidth: 0, width: '100%', order: -1 },
   kicker: { fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.1em', color: C.faint, fontWeight: 700, marginBottom: 8 },
   title: { fontFamily: "'Inter', system-ui, sans-serif", fontSize: 32, fontWeight: 750, color: C.text, letterSpacing: '-0.03em' },
+  titleMobile: { fontSize: 28, lineHeight: 1.1 },
   navBtn: {
     fontSize: 14, padding: '11px 18px', border: '1px solid rgba(255,255,255,0.68)', borderRadius: 999,
     background: 'rgba(255,255,255,0.62)', cursor: 'pointer', color: C.text, fontWeight: 600,
     boxShadow: C.shadowSoft, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)'
   },
-  wrap: { ...glassPanel, borderRadius: 28, overflow: 'hidden', width: '100%', background: 'rgba(255,255,255,0.64)' },
+  signoutMobile: { padding: '12px 18px', fontSize: 15 },
+  wrap: { ...glassPanel, borderRadius: 28, overflowX: 'auto', overflowY: 'hidden', width: '100%', background: 'rgba(255,255,255,0.64)', WebkitOverflowScrolling: 'touch' },
+  wrapMobile: { borderRadius: 24 },
   headerRow: { display: 'flex', borderBottom: `1px solid ${C.lineStrong}`, background: 'rgba(255,255,255,0.28)' },
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: C.blue, margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: {
@@ -828,6 +864,7 @@ const cal = {
     fontSize: 13,
     fontWeight: 600,
   },
+  longTermBannerMobile: { fontSize: 12, lineHeight: 1.45, margin: '-6px 0 14px' },
   bookingName: { fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   bookingSub: { fontSize: 10, color: 'rgba(255,255,255,0.86)', marginTop: 2, whiteSpace: 'nowrap' },
   bookingRemarkDot: { fontSize: 9, color: '#fff3b0', flexShrink: 0 },
