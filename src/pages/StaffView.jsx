@@ -138,9 +138,9 @@ export default function StaffView() {
   const todayStr = ds(TODAY)
   const todayFmt = format(TODAY, 'EEEE d MMMM yyyy', { locale: sv })
 
-  const checkouts = bookings.filter(b => b.checkout === todayStr && b.room_id)
-  const checkins = bookings.filter(b => b.checkin === todayStr && b.room_id)
-  const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr && b.room_id)
+  const checkouts = bookings.filter(b => b.checkout === todayStr)
+  const checkins = bookings.filter(b => b.checkin === todayStr)
+  const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
   const cleanDone = checkouts.filter(b => {
     const hk = housekeeping[`${b.room_id}_${todayStr}`]
     return hk?.cleaning_status === 'done' || hk?.checkout_done
@@ -253,19 +253,23 @@ export default function StaffView() {
                     const cs = hk?.cleaning_status || 'pending'
                     return (
                       <TodayCard key={b.id} b={b} rooms={rooms} type="checkout" color={C.red} onClick={() => setModal(b)}>
-                        <div style={p.actions}>
-                          <Btn
-                            label={cs === 'done' ? '✓ Städat' : cs === 'in_progress' ? 'Städar…' : 'Markera städat'}
-                            done={cs === 'done'}
-                            active={cs === 'in_progress'}
-                            onClick={e => { e.stopPropagation(); toggleCleaning(b.room_id, todayStr) }}
-                          />
-                          <Btn
-                            label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
-                            done={hk?.checkout_done}
-                            onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done }) }}
-                          />
-                        </div>
+                        {b.room_id ? (
+                          <div style={p.actions}>
+                            <Btn
+                              label={cs === 'done' ? '✓ Städat' : cs === 'in_progress' ? 'Städar…' : 'Markera städat'}
+                              done={cs === 'done'}
+                              active={cs === 'in_progress'}
+                              onClick={e => { e.stopPropagation(); toggleCleaning(b.room_id, todayStr) }}
+                            />
+                            <Btn
+                              label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
+                              done={hk?.checkout_done}
+                              onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done }) }}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum i Admin-vyn för att aktivera städning</div>
+                        )}
                       </TodayCard>
                     )
                   })}
@@ -278,13 +282,17 @@ export default function StaffView() {
                     const hk = housekeeping[`${b.room_id}_${todayStr}`]
                     return (
                       <TodayCard key={b.id} b={b} rooms={rooms} type="checkin" color={C.blue} onClick={() => setModal(b)}>
-                        <div style={p.actions}>
-                          <Btn
-                            label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
-                            done={hk?.checkin_done}
-                            onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done }) }}
-                          />
-                        </div>
+                        {b.room_id ? (
+                          <div style={p.actions}>
+                            <Btn
+                              label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
+                              done={hk?.checkin_done}
+                              onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done }) }}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum i Admin-vyn för att aktivera incheckning</div>
+                        )}
                       </TodayCard>
                     )
                   })}
@@ -627,7 +635,7 @@ function TodayCard({ b, rooms, type, color, onClick, children }) {
     <div style={{ ...p.card, boxShadow: `${C.shadowSoft}, inset 0 1px 0 ${color}22` }} onClick={onClick}>
       <div style={p.cardTop}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={p.cardRoom}>{room?.name || `Rum ${b.room_id}`}</span>
+          <span style={{ ...p.cardRoom, ...(room ? {} : { color: C.amber }) }}>{room?.name || (b.room_id ? `Rum ${b.room_id}` : 'Rum ej tilldelat')}</span>
           <span style={p.cardType}>{room?.type}</span>
         </div>
         <span style={{ ...p.cardBadge, background: `${color}16`, color }}>
