@@ -95,12 +95,19 @@ export default function StaffView() {
   const [modal, setModal] = useState(null)
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
+  const [errorMsg, setErrorMsg] = useState(null)
   const isMobile = useIsMobile()
 
   useEffect(() => {
     supabase.from('rooms').select('*').then(({ data }) => setRooms(sortRooms(data || [])))
     supabase.from('bookings').select('*').then(({ data }) => setBookings(data || []))
     fetchHousekeeping()
+
+    const interval = setInterval(() => {
+      supabase.from('bookings').select('*').then(({ data }) => { if (data) setBookings(data) })
+      fetchHousekeeping()
+    }, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -119,11 +126,12 @@ export default function StaffView() {
 
   async function upsertHK(roomId, date, patch) {
     const key = `${roomId}_${date}`
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('housekeeping')
       .upsert({ room_id: roomId, date, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'room_id,date' })
       .select()
       .single()
+    if (error) { setErrorMsg('Kunde inte spara — kontrollera nätverket och försök igen.'); return }
     if (data) setHousekeeping(prev => ({ ...prev, [key]: data }))
   }
 
@@ -194,6 +202,12 @@ export default function StaffView() {
       <div style={s.bgBlobOne} />
       <div style={s.bgBlobTwo} />
       <div style={s.bgBlobThree} />
+
+      {errorMsg && (
+        <div onClick={() => setErrorMsg(null)} style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#c0392b', color: '#fff', padding: '12px 20px', borderRadius: 10, fontSize: 14, cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+          {errorMsg} ✕
+        </div>
+      )}
 
       {modal && (
         <BookingModal
@@ -492,9 +506,11 @@ function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleani
         </div>
 
         <div style={m.hero}>
-          <div style={m.heroRoom}>{room?.name || `Rum ${b.room_id}`}</div>
+          <div style={{ ...m.heroRoom, ...(room ? {} : { color: C.amber }) }}>
+            {room?.name || (b.room_id ? `Rum ${b.room_id}` : 'Rum ej tilldelat')}
+          </div>
           <div style={m.heroGuest}>{b.guest_name}</div>
-          <div style={m.heroSub}>{room?.type}</div>
+          <div style={m.heroSub}>{room?.type || b.unit_type}</div>
         </div>
 
         <div style={m.grid}>
@@ -515,27 +531,35 @@ function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleani
 
         {(isOut || isIn) && (
           <div style={m.actions}>
-            {isOut && (
+            {!b.room_id ? (
+              <div style={{ fontSize: 13, color: C.amber, textAlign: 'center', padding: '8px 0' }}>
+                Tilldela rum i Admin-vyn för att aktivera städning och incheckning
+              </div>
+            ) : (
               <>
-                <ModalBtn
-                  label={hk?.cleaning_status === 'done' ? '✓ Städning klar' : hk?.cleaning_status === 'in_progress' ? 'Städar…' : 'Markera städat'}
-                  done={hk?.cleaning_status === 'done'}
-                  active={hk?.cleaning_status === 'in_progress'}
-                  onClick={() => onToggleCleaning(b.room_id, todayStr)}
-                />
-                <ModalBtn
-                  label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
-                  done={hk?.checkout_done}
-                  onClick={() => onUpsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done })}
-                />
+                {isOut && (
+                  <>
+                    <ModalBtn
+                      label={hk?.cleaning_status === 'done' ? '✓ Städning klar' : hk?.cleaning_status === 'in_progress' ? 'Städar…' : 'Markera städat'}
+                      done={hk?.cleaning_status === 'done'}
+                      active={hk?.cleaning_status === 'in_progress'}
+                      onClick={() => onToggleCleaning(b.room_id, todayStr)}
+                    />
+                    <ModalBtn
+                      label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
+                      done={hk?.checkout_done}
+                      onClick={() => onUpsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done })}
+                    />
+                  </>
+                )}
+                {isIn && (
+                  <ModalBtn
+                    label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
+                    done={hk?.checkin_done}
+                    onClick={() => onUpsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done })}
+                  />
+                )}
               </>
-            )}
-            {isIn && (
-              <ModalBtn
-                label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
-                done={hk?.checkin_done}
-                onClick={() => onUpsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done })}
-              />
             )}
           </div>
         )}

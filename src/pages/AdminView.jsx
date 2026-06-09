@@ -120,8 +120,14 @@ export default function AdminView() {
 
     const ids = [...new Set(importPreview.map(b => b.id).filter(Boolean))]
 
-    // Hämta befintliga bokningar först så en ny XLS-uppladdning uppdaterar samma bokning
-    // men inte råkar nollställa ett rum som admin redan har valt manuellt.
+    // Ta bort eventuella gamla osplittade rader för bokningar som nu är multi-rum.
+    // T.ex. om bokning "123" tidigare importerades som en rad men nu splittats till "123-1" och "123-2".
+    const originalIds = [...new Set(importPreview.map(b => b.multi_room_original_id).filter(Boolean))]
+    if (originalIds.length > 0) {
+      await supabase.from('bookings').delete().in('id', originalIds)
+    }
+
+    // Hämta befintliga bokningar så manuellt tilldelade rum bevaras vid återimport.
     const { data: existingRows, error: fetchError } = await supabase
       .from('bookings')
       .select('id, room_id')
@@ -136,12 +142,8 @@ export default function AdminView() {
     const existingById = new Map((existingRows || []).map(row => [row.id, row]))
     const merged = importPreview.map(incoming => {
       const existing = existingById.get(incoming.id)
-
       return {
         ...incoming,
-
-        // Om parsern kan föreslå ett rum använder vi det.
-        // Annars behåller vi befintlig manuell rumstilldelning vid återimport.
         room_id: incoming.room_id || existing?.room_id || null,
       }
     })
@@ -155,7 +157,6 @@ export default function AdminView() {
     } else {
       const existingCount = merged.filter(b => existingById.has(b.id)).length
       const newCount = merged.length - existingCount
-
       setImportMsg(`✓ ${newCount} nya, ${existingCount} uppdaterade`)
       setImportPreview([])
       loadBookings()
