@@ -214,18 +214,6 @@ export default function AdminView() {
     await loadRooms()
   }
 
-  function getSegment(roomId, date) {
-    const d = typeof date === 'string' ? parseISO(date) : date
-    for (const b of bookings) {
-      if (b.room_id !== roomId || !b.checkin || !b.checkout) continue
-      const ci = parseISO(b.checkin), co = parseISO(b.checkout)
-      if (isSameDay(ci, d)) return { type: 'checkin', booking: b }
-      if (isSameDay(co, d)) return { type: 'checkout', booking: b }
-      if (d > ci && d < co) return { type: 'stay', booking: b }
-    }
-    return { type: 'free', booking: null }
-  }
-
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
   const unassigned = bookings.filter(b => !b.room_id)
   const assigned   = bookings.filter(b => b.room_id)
