@@ -128,6 +128,7 @@ export function parseBookingXLS(file) {
           obj.checkout = parseDate(obj.checkout)
           obj.id = stableBookingId(obj.id)
           obj.guest_name = cleanText(obj.guest_name) || displayNameFromBookedBy(obj.booked_by)
+          delete obj.booked_by
           obj.unit_type = cleanText(obj.unit_type)
           obj.status = cleanText(obj.status)
           obj.remarks = cleanText(obj.remarks)
