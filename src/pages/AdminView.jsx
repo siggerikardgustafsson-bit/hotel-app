@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase, signOut } from '../lib/supabase'
+import { subscribeToBookings, isActiveBooking } from '../lib/realtime'
 import { parseBookingXLS, extractRoomCandidates } from '../lib/parseXLS'
 import { format, addDays, startOfWeek, isSameDay, parseISO, differenceInDays } from 'date-fns'
 import { sv } from 'date-fns/locale'
@@ -24,6 +25,25 @@ function isLongTermActiveInDays(room, days) {
   return days.some(d => isLongTermActive(room, d))
 }
 
+function roomSortNumber(room) {
+  const n = parseInt(room?.id, 10)
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
+}
+
+function bookableRoomSortRank(room, days) {
+  if (!room?.long_term_enabled) return 1
+
+  const weekStart = ds(days[0])
+  const weekEnd = ds(days[days.length - 1])
+  const activeInWeek = isLongTermActiveInDays(room, days)
+
+  if (!activeInWeek) {
+    return room.long_term_end && room.long_term_end < weekStart ? 0 : 1
+  }
+
+  return room.long_term_end && room.long_term_end < weekEnd ? 0 : 2
+}
+
 const EMPTY_ROOM = {
   id: '',
   name: '',
@@ -34,6 +54,17 @@ const EMPTY_ROOM = {
   long_term_start: '',
   long_term_end: '',
   long_term_note: '',
+}
+
+const EMPTY_MANUAL_BOOKING = {
+  guest_name: '',
+  checkin: '',
+  checkout: '',
+  people: 1,
+  unit_type: '',
+  room_id: '',
+  remarks: '',
+  price: '',
 }
 
 const NUM_DAYS = 7
@@ -72,6 +103,7 @@ export default function AdminView() {
   const [saving, setSaving] = useState({})
   const [modal, setModal] = useState(null) // booking for detail modal
   const [roomModal, setRoomModal] = useState(null) // room create/edit modal
+  const [manualBookingModal, setManualBookingModal] = useState(false)
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
@@ -80,6 +112,9 @@ export default function AdminView() {
 
   useEffect(() => {
     loadRooms(); loadBookings(); fetchHousekeeping()
+    // Realtime: bokningar uppdateras live (mejl/iCal-synk, andra flikar).
+    const unsubscribe = subscribeToBookings(setBookings)
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -95,7 +130,7 @@ export default function AdminView() {
   }
   async function loadBookings() {
     const { data } = await supabase.from('bookings').select('*').order('checkin')
-    setBookings(data || [])
+    setBookings((data || []).filter(isActiveBooking))
   }
   async function fetchHousekeeping() {
     const { data } = await supabase.from('housekeeping').select('*')
@@ -180,6 +215,53 @@ export default function AdminView() {
     setModal(null)
   }
 
+  async function saveManualBooking(form) {
+    const guestName = String(form.guest_name || '').trim()
+    const checkin = String(form.checkin || '').trim()
+    const checkout = String(form.checkout || '').trim()
+
+    if (!guestName || !checkin || !checkout) {
+      alert('Gäst, incheckning och utcheckning krävs.')
+      return
+    }
+    if (checkout <= checkin) {
+      alert('Utcheckning måste vara efter incheckning.')
+      return
+    }
+
+    const id = `manual-${Date.now()}`
+    const payload = {
+      id,
+      guest_name: guestName,
+      checkin,
+      checkout,
+      unit_type: String(form.unit_type || '').trim() || 'Manuell bokning',
+      room_id: form.room_id || null,
+      people: parseInt(form.people, 10) || 1,
+      status: 'ok',
+      remarks: String(form.remarks || '').trim() || null,
+      price: String(form.price || '').trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    setSaving(prev => ({ ...prev, _manualBooking: true }))
+    const { data, error } = await supabase
+      .from('bookings')
+      .insert(payload)
+      .select()
+      .single()
+    setSaving(prev => ({ ...prev, _manualBooking: false }))
+
+    if (error) {
+      alert('Kunde inte spara bokning: ' + error.message)
+      return
+    }
+
+    setManualBookingModal(false)
+    if (data) setBookings(prev => [...prev.filter(b => b.id !== data.id), data].filter(isActiveBooking))
+    else await loadBookings()
+  }
+
   async function saveRoom(form) {
     const cleanId = String(form.id || '').trim()
     const cleanName = String(form.name || '').trim()
@@ -219,10 +301,10 @@ export default function AdminView() {
   const assigned   = bookings.filter(b => b.room_id)
   const longTermRooms = rooms.filter(r => isLongTermActiveInDays(r, days))
   const adminDisplayRooms = [...rooms].sort((a, b) => {
-    const aLong = isLongTermActiveInDays(a, days) ? 1 : 0
-    const bLong = isLongTermActiveInDays(b, days) ? 1 : 0
-    if (aLong !== bLong) return aLong - bLong
-    return parseInt(a.id, 10) - parseInt(b.id, 10)
+    const aRank = bookableRoomSortRank(a, days)
+    const bRank = bookableRoomSortRank(b, days)
+    if (aRank !== bRank) return aRank - bRank
+    return roomSortNumber(a) - roomSortNumber(b)
   })
 
   const calendarBaseWidth = isMobile ? Math.max(calWidth, 860) : calWidth
@@ -272,6 +354,15 @@ export default function AdminView() {
           onClose={() => setRoomModal(null)}
           onSave={saveRoom}
           saving={saving._room}
+        />
+      )}
+
+      {manualBookingModal && (
+        <ManualBookingModal
+          rooms={rooms}
+          onClose={() => setManualBookingModal(false)}
+          onSave={saveManualBooking}
+          saving={saving._manualBooking}
         />
       )}
 
@@ -434,6 +525,14 @@ export default function AdminView() {
 
       {tab === 'bookings' && (
         <div>
+          <div style={s.previewHeader}>
+            <div>
+              <span style={s.previewTitle}>Bokningar</span>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Lägg till manuella bokningar eller tilldela rum.</div>
+            </div>
+            <button style={s.saveBtn} onClick={() => setManualBookingModal(true)}>+ Lägg till bokning</button>
+          </div>
+
           <div style={{ ...s.statsRow, ...(isMobile ? s.statsRowMobile : {}) }}>
             <StatCard label="Totalt" value={bookings.length} />
             <StatCard label="Tilldelade rum" value={assigned.length} accent />
@@ -577,6 +676,93 @@ export default function AdminView() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function ManualBookingModal({ rooms, onClose, onSave, saving }) {
+  const [form, setForm] = useState(EMPTY_MANUAL_BOOKING)
+
+  function setField(field, value) {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  return (
+    <div style={ms.overlay} onClick={onClose}>
+      <div style={{ ...ms.modal, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div style={ms.header}>
+          <div>
+            <div style={ms.roomLabel}>Lägg till bokning</div>
+            <div style={ms.roomType}>Spara utan rum för att tilldela senare, eller välj rum direkt.</div>
+          </div>
+          <button style={ms.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={ms.form}>
+          <label style={ms.label}>Gäst</label>
+          <input
+            style={ms.input}
+            value={form.guest_name}
+            onChange={e => setField('guest_name', e.target.value)}
+            placeholder="Ex. Anna Andersson"
+            autoFocus
+          />
+
+          <div style={ms.twoCols}>
+            <div>
+              <label style={ms.label}>Incheckning</label>
+              <input style={ms.input} type="date" value={form.checkin} onChange={e => setField('checkin', e.target.value)} />
+            </div>
+            <div>
+              <label style={ms.label}>Utcheckning</label>
+              <input style={ms.input} type="date" value={form.checkout} onChange={e => setField('checkout', e.target.value)} />
+            </div>
+          </div>
+
+          <div style={ms.twoCols}>
+            <div>
+              <label style={ms.label}>Antal gäster</label>
+              <input style={ms.input} type="number" min="1" value={form.people} onChange={e => setField('people', e.target.value)} />
+            </div>
+            <div>
+              <label style={ms.label}>Rum</label>
+              <select style={ms.select} value={form.room_id} onChange={e => setField('room_id', e.target.value)}>
+                <option value="">Ej tilldelat</option>
+                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} – {r.type}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <label style={ms.label}>Kategori</label>
+          <input
+            style={ms.input}
+            value={form.unit_type}
+            onChange={e => setField('unit_type', e.target.value)}
+            placeholder="Ex. Telefonbokning, Direktbokning, Balkongrum"
+          />
+
+          <label style={ms.label}>Pris</label>
+          <input
+            style={ms.input}
+            value={form.price}
+            onChange={e => setField('price', e.target.value)}
+            placeholder="Ex. 1290 SEK"
+          />
+
+          <label style={ms.label}>Anteckning</label>
+          <textarea
+            style={ms.textarea}
+            value={form.remarks}
+            onChange={e => setField('remarks', e.target.value)}
+            placeholder="Ex. Sen ankomst, betalt kontant, önskar extrasäng..."
+          />
+        </div>
+
+        <div style={ms.footer}>
+          <button style={ms.deleteBtn} onClick={onClose}>Avbryt</button>
+          <button style={ms.doneBtn} onClick={() => onSave(form)} disabled={saving}>{saving ? 'Sparar...' : 'Spara bokning'}</button>
+        </div>
+      </div>
     </div>
   )
 }

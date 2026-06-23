@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 
 const COL_MAP = {
   'Book Number': 'id',
+  'Booked by': 'booked_by',
   'Guest Name(s)': 'guest_name',
   'Check-in': 'checkin',
   'Check-out': 'checkout',
@@ -51,6 +52,12 @@ function toInt(value, fallback = 0) {
 
 function stableBookingId(value) {
   return cleanText(value).replace(/\.0$/, '')
+}
+
+function displayNameFromBookedBy(value) {
+  const cleaned = cleanText(value)
+  const match = cleaned.match(/^([^,]+),\s*(.+)$/)
+  return match ? `${match[2]} ${match[1]}`.trim() : cleaned
 }
 
 function splitMultiRoomUnitTypes(unitType, roomCount) {
@@ -120,7 +127,7 @@ export function parseBookingXLS(file) {
           obj.checkin = parseDate(obj.checkin)
           obj.checkout = parseDate(obj.checkout)
           obj.id = stableBookingId(obj.id)
-          obj.guest_name = cleanText(obj.guest_name)
+          obj.guest_name = cleanText(obj.guest_name) || displayNameFromBookedBy(obj.booked_by)
           obj.unit_type = cleanText(obj.unit_type)
           obj.status = cleanText(obj.status)
           obj.remarks = cleanText(obj.remarks)

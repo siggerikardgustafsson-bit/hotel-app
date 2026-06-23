@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { supabase, signOut } from '../lib/supabase'
+import { subscribeToBookings, isActiveBooking } from '../lib/realtime'
 import { format, addDays, startOfWeek, isSameDay, parseISO, differenceInDays } from 'date-fns'
 import { sv } from 'date-fns/locale'
 
@@ -60,6 +61,25 @@ function isLongTermActiveInDays(room, days) {
   return days.some(d => isLongTermActive(room, d))
 }
 
+function roomSortNumber(room) {
+  const n = parseInt(room?.id, 10)
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
+}
+
+function bookableRoomSortRank(room, days) {
+  if (!room?.long_term_enabled) return 1
+
+  const weekStart = ds(days[0])
+  const weekEnd = ds(days[days.length - 1])
+  const activeInWeek = isLongTermActiveInDays(room, days)
+
+  if (!activeInWeek) {
+    return room.long_term_end && room.long_term_end < weekStart ? 0 : 1
+  }
+
+  return room.long_term_end && room.long_term_end < weekEnd ? 0 : 2
+}
+
 const NUM_DAYS = 7
 const ROW_HEIGHT = 68
 const ROOM_COL_PCT = 13
@@ -100,14 +120,15 @@ export default function StaffView() {
 
   useEffect(() => {
     supabase.from('rooms').select('*').then(({ data }) => setRooms(sortRooms(data || [])))
-    supabase.from('bookings').select('*').then(({ data }) => setBookings(data || []))
+    supabase.from('bookings').select('*').then(({ data }) => setBookings((data || []).filter(isActiveBooking)))
     fetchHousekeeping()
 
-    const interval = setInterval(() => {
-      supabase.from('bookings').select('*').then(({ data }) => { if (data) setBookings(data) })
-      fetchHousekeeping()
-    }, 30000)
-    return () => clearInterval(interval)
+    // Bokningar uppdateras nu live via Supabase Realtime istället för polling.
+    const unsubscribe = subscribeToBookings(setBookings)
+
+    // Städstatus saknar realtime — behåll lätt polling för housekeeping.
+    const interval = setInterval(() => { fetchHousekeeping() }, 30000)
+    return () => { unsubscribe(); clearInterval(interval) }
   }, [])
 
   useEffect(() => {
@@ -156,10 +177,10 @@ export default function StaffView() {
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
   const staffDisplayRooms = [...rooms].sort((a, b) => {
-    const aLong = isLongTermActiveInDays(a, days) ? 1 : 0
-    const bLong = isLongTermActiveInDays(b, days) ? 1 : 0
-    if (aLong !== bLong) return aLong - bLong
-    return parseInt(a.id, 10) - parseInt(b.id, 10)
+    const aRank = bookableRoomSortRank(a, days)
+    const bRank = bookableRoomSortRank(b, days)
+    if (aRank !== bRank) return aRank - bRank
+    return roomSortNumber(a) - roomSortNumber(b)
   })
 
   const calendarBaseWidth = isMobile ? Math.max(calWidth, 860) : calWidth
