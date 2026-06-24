@@ -153,13 +153,55 @@ export default function AdminView() {
     setSaving({ _import: true })
     setImportMsg('')
 
-    const ids = [...new Set(importPreview.map(b => b.id).filter(Boolean))]
+    const cancelledRows = importPreview.filter(b => b.import_cancelled)
+    const activeRows = importPreview.filter(b => !b.import_cancelled)
+    const cancelledIds = [...new Set(cancelledRows.map(b => b.id).filter(Boolean))]
+    const ids = [...new Set(activeRows.map(b => b.id).filter(Boolean))]
+
+    if (cancelledIds.length > 0) {
+      const { data: allRows, error: cancelFetchError } = await supabase
+        .from('bookings')
+        .select('id, guest_name, checkin, checkout')
+
+      if (cancelFetchError) {
+        setImportMsg('Fel vid kontroll av avbokningar: ' + cancelFetchError.message)
+        setSaving({})
+        return
+      }
+
+      const cancelledById = new Set(cancelledIds)
+      const cancelledKeys = new Set(cancelledRows.map(b => `${b.guest_name || ''}|${b.checkin || ''}|${b.checkout || ''}`))
+      const deleteIds = (allRows || [])
+        .filter(row => {
+          const originalId = String(row.id || '').split('-')[0]
+          const key = `${row.guest_name || ''}|${row.checkin || ''}|${row.checkout || ''}`
+          return cancelledById.has(originalId) || cancelledKeys.has(key)
+        })
+        .map(row => row.id)
+
+      if (deleteIds.length > 0) {
+        const { error: deleteError } = await supabase.from('bookings').delete().in('id', deleteIds)
+        if (deleteError) {
+          setImportMsg('Fel vid borttagning av avbokningar: ' + deleteError.message)
+          setSaving({})
+          return
+        }
+      }
+    }
 
     // Ta bort eventuella gamla osplittade rader för bokningar som nu är multi-rum.
     // T.ex. om bokning "123" tidigare importerades som en rad men nu splittats till "123-1" och "123-2".
-    const originalIds = [...new Set(importPreview.map(b => b.multi_room_original_id).filter(Boolean))]
+    const originalIds = [...new Set(activeRows.map(b => b.multi_room_original_id).filter(Boolean))]
     if (originalIds.length > 0) {
       await supabase.from('bookings').delete().in('id', originalIds)
+    }
+
+    if (!activeRows.length) {
+      setImportMsg(`✓ ${cancelledIds.length} avbokade`)
+      setImportPreview([])
+      loadBookings()
+      setSaving({})
+      return
     }
 
     // Hämta befintliga bokningar så manuellt tilldelade rum bevaras vid återimport.
@@ -175,7 +217,7 @@ export default function AdminView() {
     }
 
     const existingById = new Map((existingRows || []).map(row => [row.id, row]))
-    const merged = importPreview.map(incoming => {
+    const merged = activeRows.map(incoming => {
       const existing = existingById.get(incoming.id)
       return {
         ...incoming,
@@ -192,7 +234,9 @@ export default function AdminView() {
     } else {
       const existingCount = merged.filter(b => existingById.has(b.id)).length
       const newCount = merged.length - existingCount
-      setImportMsg(`✓ ${newCount} nya, ${existingCount} uppdaterade`)
+      const cancelledCount = cancelledIds.length
+      const cancelledMsg = cancelledCount ? `, ${cancelledCount} avbokade` : ''
+      setImportMsg(`✓ ${newCount} nya, ${existingCount} uppdaterade${cancelledMsg}`)
       setImportPreview([])
       loadBookings()
     }

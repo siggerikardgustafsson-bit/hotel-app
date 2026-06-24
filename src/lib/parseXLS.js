@@ -122,8 +122,6 @@ export function parseBookingXLS(file) {
             if (field) obj[field] = row[idx]
           })
 
-          if (obj.status && cleanText(obj.status).toLowerCase().includes('cancel')) continue
-
           obj.checkin = parseDate(obj.checkin)
           obj.checkout = parseDate(obj.checkout)
           obj.id = stableBookingId(obj.id)
@@ -135,7 +133,18 @@ export function parseBookingXLS(file) {
           obj.people = toInt(obj.people, 1)
           obj.rooms = toInt(obj.rooms, 1)
 
-          if (!obj.id || !obj.guest_name || !obj.checkin || !obj.checkout) continue
+          if (!obj.id) continue
+
+          if (obj.status.toLowerCase().includes('cancel')) {
+            bookings.push({
+              ...obj,
+              status: 'cancelled_by_guest',
+              import_cancelled: true,
+            })
+            continue
+          }
+
+          if (!obj.guest_name || !obj.checkin || !obj.checkout) continue
 
           const originalId = obj.id
           const unitTypes = splitMultiRoomUnitTypes(obj.unit_type, obj.rooms)
