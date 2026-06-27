@@ -120,7 +120,6 @@ export default function AdminView() {
     // Realtime: bokningar uppdateras live (mejl/iCal-synk, andra flikar).
     const unsubscribe = subscribeToBookings(setBookings, propertyId)
     return unsubscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 
   function changeProperty(id) {

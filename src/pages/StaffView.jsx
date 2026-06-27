@@ -132,7 +132,6 @@ export default function StaffView() {
     // Städstatus saknar realtime — behåll lätt polling för housekeeping.
     const interval = setInterval(() => { fetchHousekeeping() }, 30000)
     return () => { unsubscribe(); clearInterval(interval) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 
   function changeProperty(id) {
