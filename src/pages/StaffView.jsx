@@ -67,6 +67,11 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
+// Upplagda på Booking.com (active) sorteras högst upp, inaktiva sist.
+function roomActiveRank(room) {
+  return room?.active === false ? 1 : 0
+}
+
 function bookableRoomSortRank(room, days) {
   if (!room?.long_term_enabled) return 1
 
@@ -187,6 +192,9 @@ export default function StaffView() {
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
   const staffDisplayRooms = [...rooms].sort((a, b) => {
+    const aActive = roomActiveRank(a)
+    const bActive = roomActiveRank(b)
+    if (aActive !== bActive) return aActive - bActive
     const aRank = bookableRoomSortRank(a, days)
     const bRank = bookableRoomSortRank(b, days)
     if (aRank !== bRank) return aRank - bRank
