@@ -11,6 +11,8 @@ create table rooms (
   floor integer,
   capacity integer default 2,
   notes text,
+  property_id text not null default 'vanersborg',  -- hotell: 'vanersborg' | 'bralanda'
+  active boolean not null default true,            -- upplagt/bokningsbart på Booking.com?
   created_at timestamptz default now()
 );
 
@@ -26,6 +28,7 @@ create table bookings (
   status text default 'ok',     -- 'ok' | 'cancelled_by_guest'
   remarks text,
   price text,
+  property_id text not null default 'vanersborg',  -- vilket hotell bokningen gäller
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -40,6 +43,7 @@ create table housekeeping (
   checkin_done boolean default false,
   notes text,
   updated_by text,
+  property_id text not null default 'vanersborg',  -- vilket hotell raden gäller
   updated_at timestamptz default now(),
   unique(room_id, date)
 );

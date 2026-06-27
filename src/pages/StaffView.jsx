@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { supabase, signOut } from '../lib/supabase'
 import { subscribeToBookings, isActiveBooking } from '../lib/realtime'
+import { PROPERTIES, getStoredProperty, storeProperty, propertyName } from '../lib/properties'
 import { format, addDays, startOfWeek, isSameDay, parseISO, differenceInDays } from 'date-fns'
 import { sv } from 'date-fns/locale'
 
@@ -116,20 +117,30 @@ export default function StaffView() {
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
   const [errorMsg, setErrorMsg] = useState(null)
+  const [propertyId, setPropertyId] = useState(getStoredProperty)
   const isMobile = useIsMobile()
 
   useEffect(() => {
-    supabase.from('rooms').select('*').then(({ data }) => setRooms(sortRooms(data || [])))
-    supabase.from('bookings').select('*').then(({ data }) => setBookings((data || []).filter(isActiveBooking)))
+    setRooms([]); setBookings([]); setHousekeeping({})
+    supabase.from('rooms').select('*').eq('property_id', propertyId).then(({ data }) => setRooms(sortRooms(data || [])))
+    supabase.from('bookings').select('*').eq('property_id', propertyId).then(({ data }) => setBookings((data || []).filter(isActiveBooking)))
     fetchHousekeeping()
 
     // Bokningar uppdateras nu live via Supabase Realtime istället för polling.
-    const unsubscribe = subscribeToBookings(setBookings)
+    const unsubscribe = subscribeToBookings(setBookings, propertyId)
 
     // Städstatus saknar realtime — behåll lätt polling för housekeeping.
     const interval = setInterval(() => { fetchHousekeeping() }, 30000)
     return () => { unsubscribe(); clearInterval(interval) }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId])
+
+  function changeProperty(id) {
+    if (id === propertyId) return
+    storeProperty(id)
+    setPropertyId(id)
+    setModal(null)
+  }
 
   useEffect(() => {
     if (!calRef) return
@@ -139,17 +150,17 @@ export default function StaffView() {
   }, [calRef])
 
   const fetchHousekeeping = useCallback(async () => {
-    const { data } = await supabase.from('housekeeping').select('*')
+    const { data } = await supabase.from('housekeeping').select('*').eq('property_id', propertyId)
     const map = {}
     ;(data || []).forEach(h => { map[`${h.room_id}_${h.date}`] = h })
     setHousekeeping(map)
-  }, [])
+  }, [propertyId])
 
   async function upsertHK(roomId, date, patch) {
     const key = `${roomId}_${date}`
     const { data, error } = await supabase
       .from('housekeeping')
-      .upsert({ room_id: roomId, date, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'room_id,date' })
+      .upsert({ room_id: roomId, date, property_id: propertyId, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'room_id,date' })
       .select()
       .single()
     if (error) { setErrorMsg('Kunde inte spara — kontrollera nätverket och försök igen.'); return }
@@ -246,8 +257,19 @@ export default function StaffView() {
         <div style={n.nav}>
           <div style={{ ...n.navInner, ...(isMobile ? n.navInnerMobile : {}) }}>
             <div>
-              <div style={{ ...n.logo, ...(isMobile ? n.logoMobile : {}) }}>Hotell Vänersborg</div>
+              <div style={{ ...n.logo, ...(isMobile ? n.logoMobile : {}) }}>{propertyName(propertyId)}</div>
               <div style={{ ...n.logoSub, ...(isMobile ? n.logoSubMobile : {}) }}>Personalyta · bokningar · städstatus</div>
+              <div style={{ ...n.propSwitch, ...(isMobile ? n.propSwitchMobile : {}) }}>
+                {PROPERTIES.map(pr => (
+                  <button
+                    key={pr.id}
+                    onClick={() => changeProperty(pr.id)}
+                    style={{ ...n.propBtn, ...(pr.id === propertyId ? n.propBtnActive : {}) }}
+                  >
+                    {pr.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div style={{ ...n.navRight, ...(isMobile ? n.navRightMobile : {}) }}>
@@ -400,11 +422,13 @@ export default function StaffView() {
 
               {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
+                const inactive = room.active === false
                 return (
-                  <div key={room.id} style={{ ...cal.row, minWidth: calendarBaseWidth }}>
+                  <div key={room.id} style={{ ...cal.row, ...(inactive ? cal.rowInactive : {}), minWidth: calendarBaseWidth }}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
+                      {inactive && <span style={cal.inactiveMini}>Ej på Booking.com</span>}
                       {isLongTermActiveInDays(room, days) && <span style={cal.longTermMini}>Långtidsboende</span>}
                     </div>
 
@@ -774,6 +798,17 @@ const n = {
     lineHeight: 1,
   },
   logoSub: { marginTop: 5, fontSize: 13, color: C.muted, fontWeight: 600 },
+  propSwitch: {
+    display: 'inline-flex', gap: 4, marginTop: 12, padding: 4, borderRadius: 999,
+    background: 'rgba(255,255,255,0.52)', border: '1px solid rgba(255,255,255,0.66)',
+    boxShadow: C.shadowSoft, backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', width: 'fit-content',
+  },
+  propSwitchMobile: { marginTop: 14 },
+  propBtn: {
+    padding: '8px 16px', border: 'none', borderRadius: 999, background: 'transparent',
+    fontSize: 13, fontWeight: 600, cursor: 'pointer', color: C.muted,
+  },
+  propBtnActive: { background: 'rgba(255,255,255,0.86)', color: C.text, boxShadow: '0 4px 14px rgba(125, 145, 177, 0.18)' },
   logoMobile: { fontSize: 34, lineHeight: 1.02 },
   logoSubMobile: { fontSize: 14, lineHeight: 1.35 },
   navRight: { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
@@ -889,6 +924,11 @@ const cal = {
   row: {
     display: 'flex', height: ROW_HEIGHT, borderBottom: `1px solid ${C.line}`,
     background: 'rgba(255,255,255,0.28)', position: 'relative'
+  },
+  rowInactive: { background: 'rgba(225,228,233,0.5)', opacity: 0.6 },
+  inactiveMini: {
+    display: 'inline-block', marginTop: 6, padding: '3px 7px', borderRadius: 999,
+    background: 'rgba(120,136,153,0.18)', color: C.muted, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',
   },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',

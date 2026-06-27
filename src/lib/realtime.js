@@ -12,9 +12,15 @@ export function isActiveBooking(b) {
 // i synk. Returnerar en cleanup-funktion som tar bort kanalen.
 //
 // setBookings: React state-settern för bokningslistan.
-export function subscribeToBookings(setBookings) {
+// propertyId:  filtrera så att bara raderna för valt hotell påverkas.
+export function subscribeToBookings(setBookings, propertyId) {
+  // En INSERT/UPDATE för ett annat hotell ska inte dyka upp i denna vy.
+  // En DELETE skickar bara `old` (ev. utan property_id), så vi filtrerar
+  // defensivt på lokal lista istället.
+  const belongs = (row) => !propertyId || !row?.property_id || row.property_id === propertyId
+
   const channel = supabase
-    .channel('bookings-changes')
+    .channel(`bookings-changes-${propertyId || 'all'}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'bookings' },
@@ -23,11 +29,13 @@ export function subscribeToBookings(setBookings) {
           const list = prev || []
           if (payload.eventType === 'INSERT') {
             const row = payload.new
+            if (!belongs(row)) return list
             const without = list.filter((b) => b.id !== row.id)
             return isActiveBooking(row) ? [...without, row] : without
           }
           if (payload.eventType === 'UPDATE') {
             const row = payload.new
+            if (!belongs(row)) return list.filter((b) => b.id !== row.id)
             // Avbokad -> ta bort ur listan, annars ersätt/lägg till.
             if (!isActiveBooking(row)) return list.filter((b) => b.id !== row.id)
             const exists = list.some((b) => b.id === row.id)

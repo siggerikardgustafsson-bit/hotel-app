@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase, signOut } from '../lib/supabase'
 import { subscribeToBookings, isActiveBooking } from '../lib/realtime'
 import { parseBookingXLS, extractRoomCandidates } from '../lib/parseXLS'
+import { PROPERTIES, getStoredProperty, storeProperty, propertyName } from '../lib/properties'
 import { format, addDays, startOfWeek, isSameDay, parseISO, differenceInDays } from 'date-fns'
 import { sv } from 'date-fns/locale'
 
@@ -49,6 +50,7 @@ const EMPTY_ROOM = {
   name: '',
   type: '',
   capacity: 1,
+  active: true,
   admin_notes: '',
   long_term_enabled: false,
   long_term_start: '',
@@ -108,14 +110,27 @@ export default function AdminView() {
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
+  const [propertyId, setPropertyId] = useState(getStoredProperty)
   const isMobile = useIsMobile()
 
   useEffect(() => {
+    // Byt hotell → rensa och ladda om allt filtrerat på vald property.
+    setRooms([]); setBookings([]); setHousekeeping({})
     loadRooms(); loadBookings(); fetchHousekeeping()
     // Realtime: bokningar uppdateras live (mejl/iCal-synk, andra flikar).
-    const unsubscribe = subscribeToBookings(setBookings)
+    const unsubscribe = subscribeToBookings(setBookings, propertyId)
     return unsubscribe
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId])
+
+  function changeProperty(id) {
+    if (id === propertyId) return
+    storeProperty(id)
+    setPropertyId(id)
+    setTab('calendar')
+    setModal(null); setRoomModal(null); setManualBookingModal(false)
+    setImportPreview([]); setImportMsg('')
+  }
 
   useEffect(() => {
     if (!calRef) return
@@ -125,15 +140,15 @@ export default function AdminView() {
   }, [calRef])
 
   async function loadRooms() {
-    const { data } = await supabase.from('rooms').select('*')
+    const { data } = await supabase.from('rooms').select('*').eq('property_id', propertyId)
     setRooms(sortRooms(data || []))
   }
   async function loadBookings() {
-    const { data } = await supabase.from('bookings').select('*').order('checkin')
+    const { data } = await supabase.from('bookings').select('*').eq('property_id', propertyId).order('checkin')
     setBookings((data || []).filter(isActiveBooking))
   }
   async function fetchHousekeeping() {
-    const { data } = await supabase.from('housekeeping').select('*')
+    const { data } = await supabase.from('housekeeping').select('*').eq('property_id', propertyId)
     const map = {}
     ;(data || []).forEach(h => { map[`${h.room_id}_${h.date}`] = h })
     setHousekeeping(map)
@@ -162,6 +177,7 @@ export default function AdminView() {
       const { data: allRows, error: cancelFetchError } = await supabase
         .from('bookings')
         .select('id, guest_name, checkin, checkout')
+        .eq('property_id', propertyId)
 
       if (cancelFetchError) {
         setImportMsg('Fel vid kontroll av avbokningar: ' + cancelFetchError.message)
@@ -193,7 +209,7 @@ export default function AdminView() {
     // T.ex. om bokning "123" tidigare importerades som en rad men nu splittats till "123-1" och "123-2".
     const originalIds = [...new Set(activeRows.map(b => b.multi_room_original_id).filter(Boolean))]
     if (originalIds.length > 0) {
-      await supabase.from('bookings').delete().in('id', originalIds)
+      await supabase.from('bookings').delete().eq('property_id', propertyId).in('id', originalIds)
     }
 
     if (!activeRows.length) {
@@ -208,6 +224,7 @@ export default function AdminView() {
     const { data: existingRows, error: fetchError } = await supabase
       .from('bookings')
       .select('id, room_id')
+      .eq('property_id', propertyId)
       .in('id', ids)
 
     if (fetchError) {
@@ -221,6 +238,7 @@ export default function AdminView() {
       const existing = existingById.get(incoming.id)
       return {
         ...incoming,
+        property_id: propertyId,
         room_id: incoming.room_id || existing?.room_id || null,
       }
     })
@@ -285,6 +303,7 @@ export default function AdminView() {
       status: 'ok',
       remarks: String(form.remarks || '').trim() || null,
       price: String(form.price || '').trim() || null,
+      property_id: propertyId,
       updated_at: new Date().toISOString(),
     }
 
@@ -319,6 +338,8 @@ export default function AdminView() {
       name: cleanName,
       type: String(form.type || '').trim(),
       capacity: parseInt(form.capacity, 10) || 1,
+      active: form.active !== false,
+      property_id: propertyId,
       admin_notes: String(form.admin_notes || '').trim() || null,
       long_term_enabled: !!form.long_term_enabled,
       long_term_start: form.long_term_enabled && form.long_term_start ? form.long_term_start : null,
@@ -411,9 +432,22 @@ export default function AdminView() {
       )}
 
       <div style={{ ...s.topbar, ...(isMobile ? s.topbarMobile : {}) }}>
-        <div>
-          <span style={{ ...s.hotelName, ...(isMobile ? s.hotelNameMobile : {}) }}>Hotell Vänersborg</span>
-          <span style={s.adminBadge}>Admin</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <span style={{ ...s.hotelName, ...(isMobile ? s.hotelNameMobile : {}) }}>{propertyName(propertyId)}</span>
+            <span style={s.adminBadge}>Admin</span>
+          </div>
+          <div style={{ ...s.propSwitch, ...(isMobile ? s.propSwitchMobile : {}) }}>
+            {PROPERTIES.map(p => (
+              <button
+                key={p.id}
+                onClick={() => changeProperty(p.id)}
+                style={{ ...s.propBtn, ...(p.id === propertyId ? s.propBtnActive : {}) }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ ...s.tabs, ...(isMobile ? s.tabsMobile : {}) }}>
           <TabBtn label="Kalender" active={tab==='calendar'} onClick={() => setTab('calendar')} />
@@ -478,11 +512,13 @@ export default function AdminView() {
 
             {adminDisplayRooms.map(room => {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
+              const inactive = room.active === false
               return (
-                <div key={room.id} style={{ ...ac.row, minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, ...(inactive ? ac.rowInactive : {}), minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
+                    {inactive && <span style={ac.inactiveMini}>Ej på Booking.com</span>}
                     {isLongTermActiveInDays(room, days) && <span style={ac.longTermMini}>Långtidsboende</span>}
                   </div>
 
@@ -688,7 +724,7 @@ export default function AdminView() {
           <div style={s.tableWrap}>
             <table style={s.table}>
               <thead><tr>
-                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th><Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
+                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th><Th>Booking.com</Th><Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
               </tr></thead>
               <tbody>
                 {rooms.map(r => {
@@ -700,6 +736,11 @@ export default function AdminView() {
                       <Td style={{ fontWeight: 500 }}>{r.name}</Td>
                       <Td>{r.type}</Td>
                       <Td>{r.capacity} pers.</Td>
+                      <Td>
+                        {r.active === false
+                          ? <span style={s.notListedBadge}>Ej upplagd</span>
+                          : <span style={s.listedBadge}>Upplagd</span>}
+                      </Td>
                       <Td>
                         {r.admin_notes
                           ? <span style={s.notePreview}>{String(r.admin_notes).slice(0, 80)}{String(r.admin_notes).length > 80 ? '…' : ''}</span>
@@ -816,6 +857,7 @@ function RoomModal({ initial, onClose, onSave, saving }) {
     ...EMPTY_ROOM,
     ...initial,
     capacity: initial.capacity || 1,
+    active: initial.active !== false,
     admin_notes: initial.admin_notes || '',
     long_term_enabled: !!initial.long_term_enabled,
     long_term_start: initial.long_term_start || '',
@@ -857,6 +899,15 @@ function RoomModal({ initial, onClose, onSave, saving }) {
 
           <label style={ms.label}>Kapacitet</label>
           <input style={ms.input} type="number" min="1" value={form.capacity} onChange={e => setField('capacity', e.target.value)} />
+
+          <label style={ms.checkRow}>
+            <input
+              type="checkbox"
+              checked={form.active !== false}
+              onChange={e => setField('active', e.target.checked)}
+            />
+            <span>Upplagd på Booking.com (aktiv)</span>
+          </label>
 
           <label style={ms.label}>Adminanteckning på rummet</label>
           <textarea
@@ -1075,6 +1126,10 @@ const s = {
   hotelName: { fontSize: 16, fontWeight: 600, color: '#1a1a1a', marginRight: 8 },
   hotelNameMobile: { fontSize: 24, display: 'inline-block', marginBottom: 6 },
   adminBadge: { fontSize: 10, fontWeight: 600, background: '#1a1a1a', color: '#fff', padding: '2px 7px', borderRadius: 20 },
+  propSwitch: { display: 'inline-flex', gap: 4, background: '#f2f1ec', borderRadius: 999, padding: 4, border: '1px solid #e6e3dc', width: 'fit-content' },
+  propSwitchMobile: { width: '100%' },
+  propBtn: { padding: '6px 14px', border: 'none', borderRadius: 999, background: 'transparent', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#777' },
+  propBtnActive: { background: '#fff', color: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.12)' },
   tabs: { display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' },
   tabsMobile: { width: '100%', gap: 8 },
   tabBtn: { padding: '6px 14px', border: '1px solid #ddd', borderRadius: 7, background: 'transparent', fontSize: 13, cursor: 'pointer', color: '#666', position: 'relative' },
@@ -1128,6 +1183,8 @@ const s = {
   roomId: { fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: '#1a1a1a' },
   activeBadge: { background: '#EAF3DE', color: '#27500A', fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 20 },
   inactiveBadge: { color: '#ccc', fontSize: 12 },
+  listedBadge: { background: '#EAF3DE', color: '#27500A', fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
+  notListedBadge: { background: '#eef0f3', color: '#8a93a0', fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
   notePreview: { fontSize: 12, color: '#555', lineHeight: 1.4 },
   emptyMuted: { color: '#bbb', fontSize: 12 },
   longTermBadge: { background: '#fff3cf', color: '#7a5a10', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' },
@@ -1191,6 +1248,18 @@ const ac = {
   headerRow: { display: 'flex', borderBottom: '1px solid rgba(119,136,153,0.28)', background: 'rgba(255,255,255,0.28)' },
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
+  rowInactive: { background: 'rgba(225,228,233,0.55)', opacity: 0.62 },
+  inactiveMini: {
+    display: 'inline-block',
+    marginTop: 6,
+    padding: '3px 7px',
+    borderRadius: 999,
+    background: 'rgba(120,136,153,0.18)',
+    color: '#5f7087',
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`,
     flexShrink: 0,
