@@ -111,6 +111,7 @@ export default function AdminView() {
   const [modal, setModal] = useState(null) // booking for detail modal
   const [roomModal, setRoomModal] = useState(null) // room create/edit modal
   const [manualBookingModal, setManualBookingModal] = useState(false)
+  const [summaryModal, setSummaryModal] = useState(false)
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
@@ -438,6 +439,15 @@ export default function AdminView() {
         />
       )}
 
+      {summaryModal && (
+        <TodaySummaryModal
+          bookings={bookings}
+          rooms={rooms}
+          propertyLabel={propertyName(propertyId)}
+          onClose={() => setSummaryModal(false)}
+        />
+      )}
+
       <div style={{ ...s.topbar, ...(isMobile ? s.topbarMobile : {}) }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
@@ -476,6 +486,10 @@ export default function AdminView() {
               </div>
             </div>
             <button style={{ ...ac.navBtn, ...(isMobile ? ac.navBtnMobile : {}) }} onClick={() => setWeekStart(d => addDays(d, 7))}>Nästa →</button>
+          </div>
+
+          <div style={ac.summaryBar}>
+            <button style={ac.summaryBtn} onClick={() => setSummaryModal(true)}>📋 Kopiera dagens bokningar</button>
           </div>
 
           {unassigned.length > 0 && (
@@ -853,6 +867,62 @@ function ManualBookingModal({ rooms, onClose, onSave, saving }) {
         <div style={ms.footer}>
           <button style={ms.deleteBtn} onClick={onClose}>Avbryt</button>
           <button style={ms.doneBtn} onClick={() => onSave(form)} disabled={saving}>{saving ? 'Sparar...' : 'Spara bokning'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Textlig, kopierbar sammanfattning av vilka gäster som bor idag, per rum.
+// "Idag" = incheckad senast idag och utcheckning efter idag (bor natten).
+function TodaySummaryModal({ bookings, rooms, propertyLabel, onClose }) {
+  const [copied, setCopied] = useState(false)
+  const todayStr = ds(TODAY)
+
+  const roomName = id => rooms.find(r => r.id === id)?.name || `Rum ${id}`
+  const occupied = bookings
+    .filter(b => b.room_id && b.checkin && b.checkout && b.checkin <= todayStr && b.checkout > todayStr)
+    .sort((a, b) => (parseInt(a.room_id, 10) || 0) - (parseInt(b.room_id, 10) || 0))
+
+  const dateLabel = format(TODAY, 'EEEE d MMMM yyyy', { locale: sv })
+  const header = `Bokningar ${dateLabel} – ${propertyLabel}`
+  const lines = occupied.map(b => `${roomName(b.room_id)}: ${b.guest_name}`)
+  const text = lines.length ? `${header}\n${lines.join('\n')}` : `${header}\nInga bokningar idag`
+
+  async function copy() {
+    const ta = document.getElementById('today-summary-textarea')
+    const payload = ta ? ta.value : text
+    try {
+      await navigator.clipboard.writeText(payload)
+    } catch {
+      if (ta) { ta.focus(); ta.select(); try { document.execCommand('copy') } catch { /* ignore */ } }
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <div style={ms.overlay} onClick={onClose}>
+      <div style={{ ...ms.modal, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div style={ms.header}>
+          <div>
+            <div style={ms.roomLabel}>Dagens bokningar</div>
+            <div style={ms.roomType}>{lines.length} rum belagda idag · redigera fritt innan du kopierar</div>
+          </div>
+          <button style={ms.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={ms.form}>
+          <textarea
+            id="today-summary-textarea"
+            style={{ ...ms.textarea, minHeight: 220, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, lineHeight: 1.6 }}
+            defaultValue={text}
+          />
+        </div>
+
+        <div style={ms.footer}>
+          <button style={ms.deleteBtn} onClick={onClose}>Stäng</button>
+          <button style={ms.doneBtn} onClick={copy}>{copied ? '✓ Kopierat' : 'Kopiera'}</button>
         </div>
       </div>
     </div>
@@ -1239,6 +1309,18 @@ const ac = {
     boxShadow: '0 8px 24px rgba(86, 104, 140, 0.10)',
   },
   navBtnMobile: { padding: '10px 14px', fontSize: 13 },
+  summaryBar: { display: 'flex', justifyContent: 'flex-end', margin: '-4px 0 14px' },
+  summaryBtn: {
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '10px 16px',
+    border: '1px solid rgba(255,255,255,0.68)',
+    borderRadius: 999,
+    background: 'rgba(255,255,255,0.62)',
+    cursor: 'pointer',
+    color: '#18212f',
+    boxShadow: '0 8px 24px rgba(86, 104, 140, 0.10)',
+  },
   longTermBanner: {
     ...glassPanel,
     background: 'rgba(255,248,220,0.68)',
