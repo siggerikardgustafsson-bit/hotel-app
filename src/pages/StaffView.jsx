@@ -549,8 +549,13 @@ export default function StaffView() {
                 const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
                 const isOutOfOrder = isBralanda && !!room.out_of_order
                 const isCleaned = isBralanda && hk?.cleaning_status === 'done'
+                // Grön rad = dagens gäst har checkat in och betalat. Utcheckning idag tonas ner istället.
+                const arrivalToday = pixels.find(px => px.booking.checkin === todayStr)?.booking
+                const departureToday = pixels.find(px => px.booking.checkout === todayStr)?.booking
+                const isArrivedToday = isBralanda && !!arrivalToday && !!arrivalToday.paid && !!hk?.checkin_done
+                const isDepartedToday = isBralanda && !!departureToday && !isArrivedToday
                 return (
-                  <div key={room.id} style={{ ...cal.row, ...(isCleaned ? cal.rowCleaned : {}), ...(isOutOfOrder ? cal.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
+                  <div key={room.id} style={{ ...cal.row, ...(isDepartedToday ? cal.rowDepartedToday : {}), ...(isArrivedToday ? cal.rowArrivedToday : {}), ...(isOutOfOrder ? cal.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
@@ -1307,7 +1312,8 @@ const cal = {
     background: 'rgba(255,255,255,0.28)', position: 'relative'
   },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.5)' },
-  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
+  rowArrivedToday: { background: 'rgba(206,238,222,0.45)' },
+  rowDepartedToday: { opacity: 0.72 },
   outOfOrderMini: {
     display: 'inline-block', marginTop: 6, padding: '3px 7px', borderRadius: 999,
     background: 'rgba(220,60,60,0.16)', color: '#a12727', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',

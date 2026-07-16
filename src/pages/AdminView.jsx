@@ -628,9 +628,13 @@ export default function AdminView() {
               const hk = housekeeping[`${room.id}_${todayStr}`]
               const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
               const isOutOfOrder = isBralanda && !!room.out_of_order
-              const isCleaned = isBralanda && hk?.cleaning_status === 'done'
+              // Grön rad = dagens gäst har checkat in och betalat. Utcheckning idag tonas ner istället.
+              const arrivalToday = pixels.find(px => px.booking.checkin === todayStr)?.booking
+              const departureToday = pixels.find(px => px.booking.checkout === todayStr)?.booking
+              const isArrivedToday = isBralanda && !!arrivalToday && !!arrivalToday.paid && !!hk?.checkin_done
+              const isDepartedToday = isBralanda && !!departureToday && !isArrivedToday
               return (
-                <div key={room.id} style={{ ...ac.row, ...(isCleaned ? ac.rowCleaned : {}), ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, ...(isDepartedToday ? ac.rowDepartedToday : {}), ...(isArrivedToday ? ac.rowArrivedToday : {}), ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
@@ -1619,7 +1623,8 @@ const ac = {
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.55)' },
-  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
+  rowArrivedToday: { background: 'rgba(206,238,222,0.45)' },
+  rowDepartedToday: { opacity: 0.72 },
   outOfOrderMini: {
     display: 'inline-block',
     marginTop: 6,
