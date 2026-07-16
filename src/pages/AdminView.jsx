@@ -445,11 +445,9 @@ export default function AdminView() {
   const unassigned = bookings.filter(b => !b.room_id)
   const assigned   = bookings.filter(b => b.room_id)
   const longTermRooms = rooms.filter(r => isLongTermActiveInDays(r, days))
-  const checkoutsToday = bookings.filter(b => b.checkout === todayStr)
-  const cleanDoneToday = checkoutsToday.filter(b => {
-    const hk = housekeeping[`${b.room_id}_${todayStr}`]
-    return hk?.cleaning_status === 'done' || hk?.checkout_done
-  }).length
+  const activeRooms = rooms.filter(r => !r.out_of_order)
+  const notCleanedRooms = activeRooms.filter(r => housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  const cleanedCount = activeRooms.length - notCleanedRooms.length
 
   const searchTerm = bookingSearch.trim().toLowerCase()
   function matchesSearch(b) {
@@ -548,9 +546,7 @@ export default function AdminView() {
 
       {cleaningModal && (
         <CleaningTodayModal
-          checkouts={checkoutsToday}
-          rooms={rooms}
-          housekeeping={housekeeping}
+          notCleanedRooms={notCleanedRooms}
           todayStr={todayStr}
           onToggleCleaning={toggleCleaning}
           onClose={() => setCleaningModal(false)}
@@ -600,7 +596,7 @@ export default function AdminView() {
           <div style={ac.summaryBar}>
             {isBralanda && (
               <button style={ac.summaryBtn} onClick={() => setCleaningModal(true)}>
-                🧹 Städning idag: {cleanDoneToday}/{checkoutsToday.length}
+                🧹 Städning: {cleanedCount}/{activeRooms.length}
               </button>
             )}
             <button style={ac.summaryBtn} onClick={() => setSummaryModal(true)}>📋 Kopiera dagens bokningar</button>
@@ -1111,45 +1107,38 @@ function TodaySummaryModal({ bookings, rooms, propertyLabel, today, onClose }) {
   )
 }
 
-function CleaningTodayModal({ checkouts, rooms, housekeeping, todayStr, onToggleCleaning, onClose }) {
-  const roomName = id => rooms.find(r => r.id === id)?.name || `Rum ${id}`
-  const sorted = [...checkouts]
-    .filter(b => b.room_id)
-    .sort((a, b) => (parseInt(a.room_id, 10) || 0) - (parseInt(b.room_id, 10) || 0))
+function CleaningTodayModal({ notCleanedRooms, todayStr, onToggleCleaning, onClose }) {
+  const sorted = [...notCleanedRooms].sort((a, b) => (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0))
 
   return (
     <div style={ms.overlay} onClick={onClose}>
       <div style={{ ...ms.modal, maxWidth: 480 }} onClick={e => e.stopPropagation()}>
         <div style={ms.header}>
           <div>
-            <div style={ms.roomLabel}>Städning idag</div>
-            <div style={ms.roomType}>{checkouts.length} utcheckning{checkouts.length !== 1 ? 'ar' : ''} idag</div>
+            <div style={ms.roomLabel}>Rum som inte är städade</div>
+            <div style={ms.roomType}>{notCleanedRooms.length} rum kvar</div>
           </div>
           <button style={ms.closeBtn} onClick={onClose}>✕</button>
         </div>
 
         <div style={{ padding: '4px 18px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sorted.length === 0 ? (
-            <div style={s.emptyMuted}>Inga utcheckningar idag</div>
+            <div style={s.emptyMuted}>Alla rum är städade & klara</div>
           ) : (
-            sorted.map(b => {
-              const hk = housekeeping[`${b.room_id}_${todayStr}`]
-              const done = hk?.cleaning_status === 'done'
-              return (
-                <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0ede7' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#18212f' }}>{roomName(b.room_id)}</div>
-                    <div style={{ fontSize: 11, color: '#8fa0b5', marginTop: 2 }}>{b.guest_name}</div>
-                  </div>
-                  <button
-                    style={{ ...ac.hkPill, ...(done ? ac.hkPillDone : {}) }}
-                    onClick={() => onToggleCleaning(b.room_id, todayStr)}
-                  >
-                    {done ? '✓ Städat & kort' : 'Markera städat & kort'}
-                  </button>
+            sorted.map(room => (
+              <div key={room.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0ede7' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#18212f' }}>{room.name}</div>
+                  <div style={{ fontSize: 11, color: '#8fa0b5', marginTop: 2 }}>{room.type}</div>
                 </div>
-              )
-            })
+                <button
+                  style={ac.hkPill}
+                  onClick={() => onToggleCleaning(room.id, todayStr)}
+                >
+                  Markera städat & kort
+                </button>
+              </div>
+            ))
           )}
         </div>
       </div>

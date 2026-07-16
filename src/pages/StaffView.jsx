@@ -152,6 +152,7 @@ export default function StaffView() {
   const [propertyId, setPropertyId] = useState(getStoredProperty)
   const [saving, setSaving] = useState({})
   const [manualBookingModal, setManualBookingModal] = useState(false)
+  const [cleaningStatusModal, setCleaningStatusModal] = useState(false)
   const isMobile = useIsMobile()
   // Redigering/tillägg av bokningar, rumstilldelning, städ&kort/incheckad-etiketter
   // och betald-bocken är just nu bara aktiverade för Brålanda — Vänersborg oförändrat.
@@ -284,10 +285,9 @@ export default function StaffView() {
   const checkouts = bookings.filter(b => b.checkout === todayStr)
   const checkins = bookings.filter(b => b.checkin === todayStr)
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
-  const cleanDone = checkouts.filter(b => {
-    const hk = housekeeping[`${b.room_id}_${todayStr}`]
-    return hk?.cleaning_status === 'done' || hk?.checkout_done
-  }).length
+  const activeRooms = rooms.filter(r => !r.out_of_order)
+  const notCleanedRooms = activeRooms.filter(r => housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  const cleanedCount = activeRooms.length - notCleanedRooms.length
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
   const staffDisplayRooms = [...rooms].sort((a, b) => {
@@ -373,6 +373,15 @@ export default function StaffView() {
         />
       )}
 
+      {cleaningStatusModal && (
+        <CleaningStatusModal
+          notCleanedRooms={notCleanedRooms}
+          todayStr={todayStr}
+          onToggleCleaning={toggleCleaning}
+          onClose={() => setCleaningStatusModal(false)}
+        />
+      )}
+
       <div style={n.navShell}>
         <div style={n.nav}>
           <div style={{ ...n.navInner, ...(isMobile ? n.navInnerMobile : {}) }}>
@@ -419,7 +428,14 @@ export default function StaffView() {
 
             <div style={{ ...p.statsGrid, ...(isMobile ? p.statsGridMobile : {}) }}>
               <StatTile icon="↑" label="Utcheckningar" value={checkouts.length} color={C.red} />
-              <StatTile icon="✓" label="Städning klar" value={`${cleanDone} / ${checkouts.length}`} color={C.green} done={cleanDone === checkouts.length && checkouts.length > 0} />
+              <StatTile
+                icon="✓"
+                label="Städning klar"
+                value={`${cleanedCount} / ${activeRooms.length}`}
+                color={C.green}
+                done={cleanedCount === activeRooms.length && activeRooms.length > 0}
+                onClick={() => setCleaningStatusModal(true)}
+              />
               <StatTile icon="↓" label="Incheckningar" value={checkins.length} color={C.blue} />
               <StatTile icon="●" label="Bor kvar" value={stays.length} color={C.purple} />
               <StatTile icon="⌂" label="Långtidsboende" value={longTermToday.length} color={C.amber} />
@@ -981,6 +997,37 @@ function AddBookingModal({ rooms, onClose, onSave, saving }) {
   )
 }
 
+function CleaningStatusModal({ notCleanedRooms, todayStr, onToggleCleaning, onClose }) {
+  const sorted = [...notCleanedRooms].sort((a, b) => (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0))
+
+  return (
+    <div style={m.overlay} onClick={onClose}>
+      <div style={{ ...m.sheet, maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div style={m.top}>
+          <div style={{ ...m.heroRoom, padding: 0 }}>Rum som inte är städade</div>
+          <button style={m.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sorted.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.muted, padding: '12px 0' }}>Alla rum är städade & klara ✓</div>
+          ) : (
+            sorted.map(room => (
+              <div key={room.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.line}` }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{room.name}</div>
+                  <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{room.type}</div>
+                </div>
+                <ModalBtn label="Markera städat & kort" onClick={() => onToggleCleaning(room.id, todayStr)} />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InfoTile({ label, value, wide }) {
   return (
     <div style={{ ...m.tile, ...(wide ? { gridColumn: 'span 2' } : {}) }}>
@@ -1013,9 +1060,16 @@ function ModalBtn({ label, done, active, onClick }) {
   )
 }
 
-function StatTile({ icon, label, value, color, done }) {
+function StatTile({ icon, label, value, color, done, onClick }) {
   return (
-    <div style={{ ...p.statTile, ...(done ? { background: 'rgba(244,255,249,0.72)' } : {}) }}>
+    <div
+      onClick={onClick}
+      style={{
+        ...p.statTile,
+        ...(done ? { background: 'rgba(244,255,249,0.72)' } : {}),
+        ...(onClick ? { cursor: 'pointer' } : {}),
+      }}
+    >
       <div style={{ ...p.statIcon, color }}>{icon}</div>
       <div style={p.statValue}>{value}</div>
       <div style={p.statLabel}>{label}</div>
