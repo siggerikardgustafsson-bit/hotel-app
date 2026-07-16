@@ -14,8 +14,11 @@ if (!document.getElementById('gfont-playfair')) {
   document.head.appendChild(link)
 }
 
-const TODAY = new Date()
-TODAY.setHours(0, 0, 0, 0)
+function todayMidnight() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
 
 const C = {
   bgTop: '#f7fbff',
@@ -105,6 +108,27 @@ function useIsMobile() {
   return isMobile
 }
 
+// Håller "idag" uppdaterat vid dygnsskiftet även om sidan står öppen över natten
+// (t.ex. receptionsdatorn), så att städ-/incheckningsstatus nollställs korrekt.
+function useToday() {
+  const [today, setToday] = useState(todayMidnight)
+
+  useEffect(() => {
+    let timer
+    const scheduleNext = () => {
+      const ms = todayMidnight().getTime() + 24 * 60 * 60 * 1000 - Date.now() + 1000
+      timer = setTimeout(() => {
+        setToday(todayMidnight())
+        scheduleNext()
+      }, ms)
+    }
+    scheduleNext()
+    return () => clearTimeout(timer)
+  }, [])
+
+  return today
+}
+
 const glassPanel = {
   background: C.glass,
   border: `1px solid ${C.border}`,
@@ -117,6 +141,7 @@ export default function StaffView() {
   const [rooms, setRooms] = useState([])
   const [bookings, setBookings] = useState([])
   const [housekeeping, setHousekeeping] = useState({})
+  const TODAY = useToday()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [view, setView] = useState('today')
   const [modal, setModal] = useState(null)

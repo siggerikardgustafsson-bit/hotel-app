@@ -6,8 +6,11 @@ import { PROPERTIES, getStoredProperty, storeProperty, propertyName } from '../l
 import { format, addDays, startOfWeek, isSameDay, parseISO, differenceInDays } from 'date-fns'
 import { sv } from 'date-fns/locale'
 
-const TODAY = new Date()
-TODAY.setHours(0,0,0,0)
+function todayMidnight() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
 
 function fmtDay(d) { return format(d, 'EEE d/M', { locale: sv }) }
 function fmtFull(d) { return format(parseISO(d), 'd MMM yyyy', { locale: sv }) }
@@ -94,6 +97,27 @@ function useIsMobile() {
   return isMobile
 }
 
+// Håller "idag" uppdaterat vid dygnsskiftet även om sidan står öppen över natten
+// (t.ex. receptionsdatorn), så att städ-/incheckningsstatus nollställs korrekt.
+function useToday() {
+  const [today, setToday] = useState(todayMidnight)
+
+  useEffect(() => {
+    let timer
+    const scheduleNext = () => {
+      const ms = todayMidnight().getTime() + 24 * 60 * 60 * 1000 - Date.now() + 1000
+      timer = setTimeout(() => {
+        setToday(todayMidnight())
+        scheduleNext()
+      }, ms)
+    }
+    scheduleNext()
+    return () => clearTimeout(timer)
+  }, [])
+
+  return today
+}
+
 const glassPanel = {
   background: 'rgba(255,255,255,0.64)',
   border: '1px solid rgba(255,255,255,0.72)',
@@ -115,6 +139,7 @@ export default function AdminView() {
   const [manualBookingModal, setManualBookingModal] = useState(false)
   const [summaryModal, setSummaryModal] = useState(false)
   const [bookingSearch, setBookingSearch] = useState('')
+  const TODAY = useToday()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
@@ -510,6 +535,7 @@ export default function AdminView() {
           bookings={bookings}
           rooms={rooms}
           propertyLabel={propertyName(propertyId)}
+          today={TODAY}
           onClose={() => setSummaryModal(false)}
         />
       )}
@@ -1008,16 +1034,16 @@ function ManualBookingModal({ rooms, onClose, onSave, isBralanda, saving }) {
 
 // Textlig, kopierbar sammanfattning av vilka gäster som bor idag, per rum.
 // "Idag" = incheckad senast idag och utcheckning efter idag (bor natten).
-function TodaySummaryModal({ bookings, rooms, propertyLabel, onClose }) {
+function TodaySummaryModal({ bookings, rooms, propertyLabel, today, onClose }) {
   const [copied, setCopied] = useState(false)
-  const todayStr = ds(TODAY)
+  const todayStr = ds(today)
 
   const roomName = id => rooms.find(r => r.id === id)?.name || `Rum ${id}`
   const occupied = bookings
     .filter(b => b.room_id && b.checkin && b.checkout && b.checkin <= todayStr && b.checkout > todayStr)
     .sort((a, b) => (parseInt(a.room_id, 10) || 0) - (parseInt(b.room_id, 10) || 0))
 
-  const dateLabel = format(TODAY, 'EEEE d MMMM yyyy', { locale: sv })
+  const dateLabel = format(today, 'EEEE d MMMM yyyy', { locale: sv })
   const header = `Bokningar ${dateLabel} – ${propertyLabel}`
   const lines = occupied.map(b => `${roomName(b.room_id)}: ${b.guest_name}`)
   const text = lines.length ? `${header}\n${lines.join('\n')}` : `${header}\nInga bokningar idag`
