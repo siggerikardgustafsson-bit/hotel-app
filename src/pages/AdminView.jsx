@@ -603,7 +603,7 @@ export default function AdminView() {
                           onClick={() => toggleCleaning(room.id, todayStr)}
                           title="Städat & nyckelkort finns – rummet redo för ny gäst"
                         >
-                          {hk?.cleaning_status === 'done' ? '✓ Städat & kort' : 'Städat & kort'}
+                          {hk?.cleaning_status === 'done' ? '✓ Städat & kort' : 'Markera städat & kort'}
                         </button>
                       </div>
                     )}
@@ -672,7 +672,7 @@ export default function AdminView() {
                                 style={{ ...ac.bookingCheckinChip, ...(checkinDone ? ac.bookingCheckinChipDone : {}) }}
                                 title="Klicka för att markera in-/utcheckad"
                               >
-                                {checkinDone ? '✓ Incheckad' : 'Incheckad'}
+                                {checkinDone ? '✓ Incheckad' : 'Markera incheckad'}
                               </span>
                             )}
                           </div>
