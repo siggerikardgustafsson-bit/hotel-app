@@ -285,8 +285,10 @@ export default function StaffView() {
   const checkouts = bookings.filter(b => b.checkout === todayStr)
   const checkins = bookings.filter(b => b.checkin === todayStr)
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
+  const occupiedRoomIds = new Set(stays.filter(b => b.room_id).map(b => b.room_id))
   const activeRooms = rooms.filter(r => !r.out_of_order)
-  const notCleanedRooms = activeRooms.filter(r => housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
+  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
   const cleanedCount = activeRooms.length - notCleanedRooms.length
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))

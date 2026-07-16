@@ -445,8 +445,12 @@ export default function AdminView() {
   const unassigned = bookings.filter(b => !b.room_id)
   const assigned   = bookings.filter(b => b.room_id)
   const longTermRooms = rooms.filter(r => isLongTermActiveInDays(r, days))
+  const occupiedRoomIds = new Set(
+    bookings.filter(b => b.room_id && b.checkin < todayStr && b.checkout > todayStr).map(b => b.room_id)
+  )
   const activeRooms = rooms.filter(r => !r.out_of_order)
-  const notCleanedRooms = activeRooms.filter(r => housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
+  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
   const cleanedCount = activeRooms.length - notCleanedRooms.length
 
   const searchTerm = bookingSearch.trim().toLowerCase()
