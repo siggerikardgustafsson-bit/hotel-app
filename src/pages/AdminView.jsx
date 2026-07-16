@@ -628,8 +628,9 @@ export default function AdminView() {
               const hk = housekeeping[`${room.id}_${todayStr}`]
               const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
               const isOutOfOrder = isBralanda && !!room.out_of_order
+              const isCleaned = isBralanda && hk?.cleaning_status === 'done'
               return (
-                <div key={room.id} style={{ ...ac.row, ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, ...(isCleaned ? ac.rowCleaned : {}), ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
@@ -1618,6 +1619,7 @@ const ac = {
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.55)' },
+  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
   outOfOrderMini: {
     display: 'inline-block',
     marginTop: 6,

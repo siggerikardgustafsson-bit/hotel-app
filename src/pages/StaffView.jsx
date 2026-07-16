@@ -92,6 +92,7 @@ function bookableRoomSortRank(room, days) {
 
 const NUM_DAYS = 7
 const ROW_HEIGHT = 68
+const ROW_HEIGHT_BRALANDA = 92
 const ROOM_COL_PCT = 13
 
 
@@ -544,14 +545,28 @@ export default function StaffView() {
 
               {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
+                const hk = housekeeping[`${room.id}_${todayStr}`]
+                const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
                 const isOutOfOrder = isBralanda && !!room.out_of_order
+                const isCleaned = isBralanda && hk?.cleaning_status === 'done'
                 return (
-                  <div key={room.id} style={{ ...cal.row, ...(isOutOfOrder ? cal.rowOutOfOrder : {}), minWidth: calendarBaseWidth }}>
+                  <div key={room.id} style={{ ...cal.row, ...(isCleaned ? cal.rowCleaned : {}), ...(isOutOfOrder ? cal.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
                       {isOutOfOrder && <span style={cal.outOfOrderMini}>Ur drift</span>}
                       {isLongTermActiveInDays(room, days) && <span style={cal.longTermMini}>Långtidsboende</span>}
+                      {isBralanda && (
+                        <div style={cal.hkRow}>
+                          <button
+                            style={{ ...cal.hkPill, ...(isCleaned ? cal.hkPillDone : {}) }}
+                            onClick={() => toggleCleaning(room.id, todayStr)}
+                            title="Städat & nyckelkort finns – rummet redo för ny gäst"
+                          >
+                            {isCleaned ? '✓ Städat & kort' : 'Markera städat & kort'}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ position: 'relative', flex: 1, height: '100%' }}>
@@ -1292,10 +1307,18 @@ const cal = {
     background: 'rgba(255,255,255,0.28)', position: 'relative'
   },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.5)' },
+  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
   outOfOrderMini: {
     display: 'inline-block', marginTop: 6, padding: '3px 7px', borderRadius: 999,
     background: 'rgba(220,60,60,0.16)', color: '#a12727', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',
   },
+  hkRow: { display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' },
+  hkPill: {
+    fontSize: 9, fontWeight: 700, padding: '3px 6px', borderRadius: 999,
+    border: `1px solid ${C.lineStrong}`, background: 'rgba(255,255,255,0.7)', color: C.muted,
+    cursor: 'pointer', whiteSpace: 'nowrap',
+  },
+  hkPillDone: { background: C.greenSoft, color: C.green, borderColor: 'rgba(55,184,122,0.3)' },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',
     padding: '0 14px', borderRight: `1px solid ${C.line}`, background: 'rgba(255,255,255,0.34)'
