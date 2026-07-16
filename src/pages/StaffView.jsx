@@ -585,11 +585,12 @@ export default function StaffView() {
                       ))}
 
                       {pixels.map(({ left, width, booking, startsBeforeWeek, endsAfterWeek }) => {
-                        // Brålanda: grön bokning = betalat & incheckat. Vänersborg: grön = rummet städat (oförändrat).
+                        // Brålanda: grön bokning = betalat & incheckat, fram till utcheckningsdagen.
+                        // Vänersborg: grön = rummet städat (oförändrat).
                         const checkoutHK = housekeeping[`${room.id}_${booking.checkout}`]
                         const checkinHK = housekeeping[`${room.id}_${booking.checkin}`]
                         const showGreen = isBralanda
-                          ? (!!booking.paid && !!checkinHK?.checkin_done)
+                          ? (!!booking.paid && !!checkinHK?.checkin_done && todayStr < booking.checkout)
                           : (checkoutHK?.cleaning_status === 'done' || checkoutHK?.checkout_done)
                         const hasRemark = !!booking.remarks
                         const showUnpaid = isBralanda && !booking.paid
@@ -1307,7 +1308,9 @@ const cal = {
     background: 'rgba(255,255,255,0.28)', position: 'relative'
   },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.5)' },
-  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
+  rowCleaned: {
+    background: 'repeating-linear-gradient(135deg, rgba(206,238,222,0.5) 0px, rgba(206,238,222,0.5) 12px, rgba(255,255,255,0.4) 12px, rgba(255,255,255,0.4) 24px)',
+  },
   outOfOrderMini: {
     display: 'inline-block', marginTop: 6, padding: '3px 7px', borderRadius: 999,
     background: 'rgba(220,60,60,0.16)', color: '#a12727', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',

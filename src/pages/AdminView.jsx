@@ -1687,7 +1687,9 @@ const ac = {
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
   rowOutOfOrder: { background: 'rgba(251,225,225,0.55)' },
-  rowCleaned: { background: 'rgba(206,238,222,0.45)' },
+  rowCleaned: {
+    background: 'repeating-linear-gradient(135deg, rgba(206,238,222,0.5) 0px, rgba(206,238,222,0.5) 12px, rgba(255,255,255,0.4) 12px, rgba(255,255,255,0.4) 24px)',
+  },
   outOfOrderMini: {
     display: 'inline-block',
     marginTop: 6,
