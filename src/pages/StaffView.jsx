@@ -570,8 +570,12 @@ export default function StaffView() {
                       ))}
 
                       {pixels.map(({ left, width, booking, startsBeforeWeek, endsAfterWeek }) => {
+                        // Brålanda: grön bokning = betalat & incheckat. Vänersborg: grön = rummet städat (oförändrat).
                         const checkoutHK = housekeeping[`${room.id}_${booking.checkout}`]
-                        const cleaned = checkoutHK?.cleaning_status === 'done' || checkoutHK?.checkout_done
+                        const checkinHK = housekeeping[`${room.id}_${booking.checkin}`]
+                        const showGreen = isBralanda
+                          ? (!!booking.paid && !!checkinHK?.checkin_done)
+                          : (checkoutHK?.cleaning_status === 'done' || checkoutHK?.checkout_done)
                         const hasRemark = !!booking.remarks
                         const showUnpaid = isBralanda && !booking.paid
                         const nights = differenceInDays(parseISO(booking.checkout), parseISO(booking.checkin))
@@ -589,7 +593,7 @@ export default function StaffView() {
                               width: Math.max(width - 10, 22),
                               top: 10,
                               bottom: 10,
-                              background: cleaned ? C.blockDone : C.block,
+                              background: showGreen ? C.blockDone : C.block,
                               border: '1px solid rgba(255,255,255,0.36)',
                               borderTopLeftRadius: startsBeforeWeek ? 3 : 16,
                               borderBottomLeftRadius: startsBeforeWeek ? 3 : 16,
@@ -641,7 +645,7 @@ export default function StaffView() {
             <div style={cal.legend}>
               {[
                 [C.block, 'Bokning'],
-                [C.blockDone, 'Städat'],
+                isBralanda ? [C.blockDone, 'Betalat & incheckat'] : [C.blockDone, 'Städat'],
                 ['rgba(246,183,60,0.18)', 'Långtidsboende'],
                 [C.amber, '● Meddelande'],
                 ...(isBralanda ? [[C.red, '$ Ej betald'], ['rgba(220,60,60,0.16)', 'Ur drift']] : []),
