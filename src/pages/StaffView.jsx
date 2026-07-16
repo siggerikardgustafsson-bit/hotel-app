@@ -154,6 +154,7 @@ export default function StaffView() {
   const [saving, setSaving] = useState({})
   const [manualBookingModal, setManualBookingModal] = useState(false)
   const [cleaningStatusModal, setCleaningStatusModal] = useState(false)
+  const [checkinStatusModal, setCheckinStatusModal] = useState(false)
   const isMobile = useIsMobile()
   // Redigering/tillägg av bokningar, rumstilldelning, städ&kort/incheckad-etiketter
   // och betald-bocken är just nu bara aktiverade för Brålanda — Vänersborg oförändrat.
@@ -301,6 +302,7 @@ export default function StaffView() {
 
   const checkouts = bookings.filter(b => b.checkout === todayStr)
   const checkins = bookings.filter(b => b.checkin === todayStr)
+  const checkinsDoneCount = checkins.filter(b => b.room_id && housekeeping[`${b.room_id}_${todayStr}`]?.checkin_done).length
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
   const occupiedRoomIds = new Set(stays.filter(b => b.room_id).map(b => b.room_id))
   const activeRooms = rooms.filter(r => !r.out_of_order)
@@ -401,6 +403,17 @@ export default function StaffView() {
         />
       )}
 
+      {checkinStatusModal && (
+        <CheckinStatusModal
+          checkins={checkins}
+          rooms={rooms}
+          housekeeping={housekeeping}
+          todayStr={todayStr}
+          onUpsertHK={upsertHK}
+          onClose={() => setCheckinStatusModal(false)}
+        />
+      )}
+
       <div style={n.navShell}>
         <div style={n.nav}>
           <div style={{ ...n.navInner, ...(isMobile ? n.navInnerMobile : {}) }}>
@@ -458,7 +471,14 @@ export default function StaffView() {
                 done={cleanedCount === activeRooms.length && activeRooms.length > 0}
                 onClick={() => setCleaningStatusModal(true)}
               />
-              <StatTile icon="↓" label="Incheckningar" value={checkins.length} color={C.blue} />
+              <StatTile
+                icon="↓"
+                label="Incheckningar"
+                value={`${checkinsDoneCount} / ${checkins.length}`}
+                color={C.blue}
+                done={checkinsDoneCount === checkins.length && checkins.length > 0}
+                onClick={() => setCheckinStatusModal(true)}
+              />
               <StatTile icon="●" label="Bor kvar" value={stays.length} color={C.purple} />
               <StatTile icon="⌂" label="Långtidsboende" value={longTermToday.length} color={C.amber} />
             </div>
@@ -1069,6 +1089,47 @@ function CleaningStatusModal({ notCleanedRooms, todayStr, onToggleCleaning, onCl
                   <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{room.type}</div>
                 </div>
                 <ModalBtn label="Markera städat & kort" onClick={() => onToggleCleaning(room.id, todayStr)} />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CheckinStatusModal({ checkins, rooms, housekeeping, todayStr, onUpsertHK, onClose }) {
+  const roomName = id => rooms.find(r => r.id === id)?.name || null
+  const remaining = checkins
+    .filter(b => !(b.room_id && housekeeping[`${b.room_id}_${todayStr}`]?.checkin_done))
+    .sort((a, b) => (parseInt(a.room_id, 10) || 0) - (parseInt(b.room_id, 10) || 0))
+
+  return (
+    <div style={m.overlay} onClick={onClose}>
+      <div style={{ ...m.sheet, maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+        <div style={m.top}>
+          <div style={{ ...m.heroRoom, padding: 0 }}>Incheckningar kvar</div>
+          <button style={m.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {remaining.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.muted, padding: '12px 0' }}>Alla dagens incheckningar är klara ✓</div>
+          ) : (
+            remaining.map(b => (
+              <div key={b.id} style={{ padding: '8px 0', borderBottom: `1px solid ${C.line}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{b.guest_name}</div>
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{roomName(b.room_id) || 'Ej tilldelat rum'}</div>
+                  </div>
+                  {b.room_id && (
+                    <ModalBtn label="Markera incheckad" onClick={() => onUpsertHK(b.room_id, todayStr, { checkin_done: true })} />
+                  )}
+                </div>
+                {b.remarks && (
+                  <div style={{ fontSize: 12, color: C.amber, marginTop: 6 }}>● {b.remarks.replace(/&#39;/g, "'")}</div>
+                )}
               </div>
             ))
           )}
