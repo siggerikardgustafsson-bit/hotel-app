@@ -31,6 +31,11 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
+// Ur drift-rum sorteras alltid sist, oavsett övriga kriterier.
+function roomOutOfOrderRank(room) {
+  return room?.out_of_order ? 1 : 0
+}
+
 function bookableRoomSortRank(room, days) {
   if (!room?.long_term_enabled) return 1
 
@@ -50,6 +55,7 @@ const EMPTY_ROOM = {
   name: '',
   type: '',
   capacity: 1,
+  out_of_order: false,
   admin_notes: '',
   long_term_enabled: false,
   long_term_start: '',
@@ -394,6 +400,7 @@ export default function AdminView() {
       long_term_note: form.long_term_enabled && form.long_term_note ? String(form.long_term_note).trim() : null,
       updated_at: new Date().toISOString(),
     }
+    if (isBralanda) payload.out_of_order = !!form.out_of_order
 
     setSaving(prev => ({ ...prev, _room: true }))
     const { error } = await supabase.from('rooms').upsert(payload, { onConflict: 'id' })
@@ -426,6 +433,9 @@ export default function AdminView() {
   const unassignedFiltered = unassigned.filter(matchesSearch)
   const assignedFiltered = assigned.filter(matchesSearch)
   const adminDisplayRooms = [...rooms].sort((a, b) => {
+    const aOoo = roomOutOfOrderRank(a)
+    const bOoo = roomOutOfOrderRank(b)
+    if (aOoo !== bOoo) return aOoo - bOoo
     const aRank = bookableRoomSortRank(a, days)
     const bRank = bookableRoomSortRank(b, days)
     if (aRank !== bRank) return aRank - bRank
@@ -480,6 +490,7 @@ export default function AdminView() {
           initial={roomModal}
           onClose={() => setRoomModal(null)}
           onSave={saveRoom}
+          isBralanda={isBralanda}
           saving={saving._room}
         />
       )}
@@ -590,11 +601,13 @@ export default function AdminView() {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
               const hk = housekeeping[`${room.id}_${todayStr}`]
               const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
+              const isOutOfOrder = isBralanda && !!room.out_of_order
               return (
-                <div key={room.id} style={{ ...ac.row, height: rowHeight, minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
+                    {isOutOfOrder && <span style={ac.outOfOrderMini}>Ur drift</span>}
                     {isLongTermActiveInDays(room, days) && <span style={ac.longTermMini}>Långtidsboende</span>}
                     {isBralanda && (
                       <div style={ac.hkRow}>
@@ -691,7 +704,7 @@ export default function AdminView() {
               ['linear-gradient(135deg, rgba(95,140,245,0.76), rgba(121,202,255,0.64))', 'Bokning'],
               ['rgba(246,183,60,0.18)', 'Långtidsboende'],
               ['#f6b73c', '● Meddelande'],
-              ...(isBralanda ? [['#c0392b', '$ Ej betald']] : []),
+              ...(isBralanda ? [['#c0392b', '$ Ej betald'], ['rgba(220,60,60,0.16)', 'Ur drift']] : []),
             ].map(([color, label]) => (
               <div key={label} style={ac.legendItem}>
                 {label.startsWith('●') || label.startsWith('$')
@@ -850,7 +863,9 @@ export default function AdminView() {
           <div style={s.tableWrap}>
             <table style={s.table}>
               <thead><tr>
-                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th><Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
+                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th>
+                {isBralanda && <Th>Status</Th>}
+                <Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
               </tr></thead>
               <tbody>
                 {rooms.map(r => {
@@ -862,6 +877,13 @@ export default function AdminView() {
                       <Td style={{ fontWeight: 500 }}>{r.name}</Td>
                       <Td>{r.type}</Td>
                       <Td>{r.capacity} pers.</Td>
+                      {isBralanda && (
+                        <Td>
+                          {r.out_of_order
+                            ? <span style={s.oooBadge}>Ur drift</span>
+                            : <span style={s.emptyMuted}>–</span>}
+                        </Td>
+                      )}
                       <Td>
                         {r.admin_notes
                           ? <span style={s.notePreview}>{String(r.admin_notes).slice(0, 80)}{String(r.admin_notes).length > 80 ? '…' : ''}</span>
@@ -1040,11 +1062,12 @@ function TodaySummaryModal({ bookings, rooms, propertyLabel, onClose }) {
   )
 }
 
-function RoomModal({ initial, onClose, onSave, saving }) {
+function RoomModal({ initial, onClose, onSave, isBralanda, saving }) {
   const [form, setForm] = useState({
     ...EMPTY_ROOM,
     ...initial,
     capacity: initial.capacity || 1,
+    out_of_order: !!initial.out_of_order,
     admin_notes: initial.admin_notes || '',
     long_term_enabled: !!initial.long_term_enabled,
     long_term_start: initial.long_term_start || '',
@@ -1086,6 +1109,17 @@ function RoomModal({ initial, onClose, onSave, saving }) {
 
           <label style={ms.label}>Kapacitet</label>
           <input style={ms.input} type="number" min="1" value={form.capacity} onChange={e => setField('capacity', e.target.value)} />
+
+          {isBralanda && (
+            <label style={ms.checkRow}>
+              <input
+                type="checkbox"
+                checked={!!form.out_of_order}
+                onChange={e => setField('out_of_order', e.target.checked)}
+              />
+              <span>Ur drift (kan inte användas alls just nu)</span>
+            </label>
+          )}
 
           <label style={ms.label}>Adminanteckning på rummet</label>
           <textarea
@@ -1477,6 +1511,7 @@ const s = {
   roomId: { fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: '#1a1a1a' },
   activeBadge: { background: '#EAF3DE', color: '#27500A', fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 20 },
   inactiveBadge: { color: '#ccc', fontSize: 12 },
+  oooBadge: { background: '#FBE1E1', color: '#a12727', fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
   paidCheckLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' },
   notePreview: { fontSize: 12, color: '#555', lineHeight: 1.4 },
   emptyMuted: { color: '#bbb', fontSize: 12 },
@@ -1556,6 +1591,18 @@ const ac = {
   headerRow: { display: 'flex', borderBottom: '1px solid rgba(119,136,153,0.28)', background: 'rgba(255,255,255,0.28)' },
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
+  rowOutOfOrder: { background: 'rgba(251,225,225,0.55)' },
+  outOfOrderMini: {
+    display: 'inline-block',
+    marginTop: 6,
+    padding: '3px 7px',
+    borderRadius: 999,
+    background: 'rgba(220,60,60,0.16)',
+    color: '#a12727',
+    fontSize: 10,
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  },
   hkRow: { display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' },
   hkPill: {
     fontSize: 9,

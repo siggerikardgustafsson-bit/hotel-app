@@ -68,6 +68,11 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
+// Ur drift-rum sorteras alltid sist, oavsett övriga kriterier.
+function roomOutOfOrderRank(room) {
+  return room?.out_of_order ? 1 : 0
+}
+
 function bookableRoomSortRank(room, days) {
   if (!room?.long_term_enabled) return 1
 
@@ -260,6 +265,9 @@ export default function StaffView() {
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
   const staffDisplayRooms = [...rooms].sort((a, b) => {
+    const aOoo = roomOutOfOrderRank(a)
+    const bOoo = roomOutOfOrderRank(b)
+    if (aOoo !== bOoo) return aOoo - bOoo
     const aRank = bookableRoomSortRank(a, days)
     const bRank = bookableRoomSortRank(b, days)
     if (aRank !== bRank) return aRank - bRank
@@ -511,11 +519,13 @@ export default function StaffView() {
 
               {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
+                const isOutOfOrder = isBralanda && !!room.out_of_order
                 return (
-                  <div key={room.id} style={{ ...cal.row, minWidth: calendarBaseWidth }}>
+                  <div key={room.id} style={{ ...cal.row, ...(isOutOfOrder ? cal.rowOutOfOrder : {}), minWidth: calendarBaseWidth }}>
                     <div style={cal.roomLabel}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
+                      {isOutOfOrder && <span style={cal.outOfOrderMini}>Ur drift</span>}
                       {isLongTermActiveInDays(room, days) && <span style={cal.longTermMini}>Långtidsboende</span>}
                     </div>
 
@@ -609,7 +619,7 @@ export default function StaffView() {
                 [C.blockDone, 'Städat'],
                 ['rgba(246,183,60,0.18)', 'Långtidsboende'],
                 [C.amber, '● Meddelande'],
-                ...(isBralanda ? [[C.red, '$ Ej betald']] : []),
+                ...(isBralanda ? [[C.red, '$ Ej betald'], ['rgba(220,60,60,0.16)', 'Ur drift']] : []),
               ].map(([color, label]) => (
                 <div key={label} style={cal.legendItem}>
                   {label.startsWith('●') || label.startsWith('$')
@@ -1251,6 +1261,11 @@ const cal = {
   row: {
     display: 'flex', height: ROW_HEIGHT, borderBottom: `1px solid ${C.line}`,
     background: 'rgba(255,255,255,0.28)', position: 'relative'
+  },
+  rowOutOfOrder: { background: 'rgba(251,225,225,0.5)' },
+  outOfOrderMini: {
+    display: 'inline-block', marginTop: 6, padding: '3px 7px', borderRadius: 999,
+    background: 'rgba(220,60,60,0.16)', color: '#a12727', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',
   },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',
