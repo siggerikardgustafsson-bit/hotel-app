@@ -107,6 +107,7 @@ export default function AdminView() {
   const [roomModal, setRoomModal] = useState(null) // room create/edit modal
   const [manualBookingModal, setManualBookingModal] = useState(false)
   const [summaryModal, setSummaryModal] = useState(false)
+  const [bookingSearch, setBookingSearch] = useState('')
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [housekeeping, setHousekeeping] = useState({})
   const [calRef, setCalRef] = useState(null)
@@ -133,7 +134,7 @@ export default function AdminView() {
     setPropertyId(id)
     setTab('calendar')
     setModal(null); setRoomModal(null); setManualBookingModal(false)
-    setImportPreview([]); setImportMsg('')
+    setImportPreview([]); setImportMsg(''); setBookingSearch('')
   }
 
   useEffect(() => {
@@ -410,6 +411,19 @@ export default function AdminView() {
   const unassigned = bookings.filter(b => !b.room_id)
   const assigned   = bookings.filter(b => b.room_id)
   const longTermRooms = rooms.filter(r => isLongTermActiveInDays(r, days))
+
+  const searchTerm = bookingSearch.trim().toLowerCase()
+  function matchesSearch(b) {
+    if (!searchTerm) return true
+    const room = rooms.find(r => r.id === b.room_id)
+    const haystack = [
+      b.guest_name, b.unit_type, b.remarks, b.price,
+      b.id, b.multi_room_original_id, room?.name, room?.id,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(searchTerm)
+  }
+  const unassignedFiltered = unassigned.filter(matchesSearch)
+  const assignedFiltered = assigned.filter(matchesSearch)
   const adminDisplayRooms = [...rooms].sort((a, b) => {
     const aRank = bookableRoomSortRank(a, days)
     const bRank = bookableRoomSortRank(b, days)
@@ -694,6 +708,19 @@ export default function AdminView() {
             <button style={s.saveBtn} onClick={() => setManualBookingModal(true)}>+ Lägg till bokning</button>
           </div>
 
+          <div style={s.searchRow}>
+            <input
+              type="text"
+              value={bookingSearch}
+              onChange={e => setBookingSearch(e.target.value)}
+              placeholder="Sök gäst, rum, kategori, bokningsnr..."
+              style={s.searchInput}
+            />
+            {bookingSearch && (
+              <button style={s.searchClearBtn} onClick={() => setBookingSearch('')}>✕ Rensa</button>
+            )}
+          </div>
+
           <div style={{ ...s.statsRow, ...(isMobile ? s.statsRowMobile : {}) }}>
             <StatCard label="Totalt" value={bookings.length} />
             <StatCard label="Tilldelade rum" value={assigned.length} accent />
@@ -702,46 +729,54 @@ export default function AdminView() {
 
           {unassigned.length > 0 && (
             <div style={s.section}>
-              <SectionTitle>Ej tilldelat rum ({unassigned.length})</SectionTitle>
-              <div style={s.tableWrap}>
-                <table style={s.table}>
-                  <thead><tr>
-                    <Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
-                    <Th>Kategori (Booking.com)</Th><Th>Tilldela rum</Th>
-                    {isBralanda && <Th>Betald</Th>}
-                    <Th></Th>
-                  </tr></thead>
-                  <tbody>
-                    {unassigned.map(b => (
-                      <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
-                        onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
-                        onInfo={() => setModal(b)} showPaid={isBralanda} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <SectionTitle>Ej tilldelat rum ({unassignedFiltered.length}{searchTerm ? ` av ${unassigned.length}` : ''})</SectionTitle>
+              {unassignedFiltered.length === 0 ? (
+                <div style={s.emptyMuted}>Inga träffar för sökningen</div>
+              ) : (
+                <div style={s.tableWrap}>
+                  <table style={s.table}>
+                    <thead><tr>
+                      <Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
+                      <Th>Kategori (Booking.com)</Th><Th>Tilldela rum</Th>
+                      {isBralanda && <Th>Betald</Th>}
+                      <Th></Th>
+                    </tr></thead>
+                    <tbody>
+                      {unassignedFiltered.map(b => (
+                        <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
+                          onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
+                          onInfo={() => setModal(b)} showPaid={isBralanda} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
           <div style={s.section}>
-            <SectionTitle>Tilldelade ({assigned.length})</SectionTitle>
-            <div style={s.tableWrap}>
-              <table style={s.table}>
-                <thead><tr>
-                  <Th>Rum</Th><Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
-                  <Th>Kategori</Th><Th>Byt rum</Th>
-                  {isBralanda && <Th>Betald</Th>}
-                  <Th></Th>
-                </tr></thead>
-                <tbody>
-                  {assigned.map(b => (
-                    <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
-                      onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
-                      onInfo={() => setModal(b)} showRoom showPaid={isBralanda} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <SectionTitle>Tilldelade ({assignedFiltered.length}{searchTerm ? ` av ${assigned.length}` : ''})</SectionTitle>
+            {assignedFiltered.length === 0 ? (
+              <div style={s.emptyMuted}>{searchTerm ? 'Inga träffar för sökningen' : 'Inga bokningar tilldelade ännu'}</div>
+            ) : (
+              <div style={s.tableWrap}>
+                <table style={s.table}>
+                  <thead><tr>
+                    <Th>Rum</Th><Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
+                    <Th>Kategori</Th><Th>Byt rum</Th>
+                    {isBralanda && <Th>Betald</Th>}
+                    <Th></Th>
+                  </tr></thead>
+                  <tbody>
+                    {assignedFiltered.map(b => (
+                      <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
+                        onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
+                        onInfo={() => setModal(b)} showRoom showPaid={isBralanda} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1449,6 +1484,9 @@ const s = {
   importMsg: { textAlign: 'center', fontSize: 13, marginTop: 10, color: '#888' },
   previewHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 12, flexWrap: 'wrap' },
   previewTitle: { fontSize: 14, fontWeight: 600 },
+  searchRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 },
+  searchInput: { flex: 1, maxWidth: 360, fontSize: 13, padding: '8px 12px', border: '1px solid #ddd', borderRadius: 7, background: '#fff' },
+  searchClearBtn: { fontSize: 12, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#888' },
   saveBtn: { padding: '8px 16px', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
 }
 
