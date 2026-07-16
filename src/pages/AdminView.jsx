@@ -711,6 +711,7 @@ export default function AdminView() {
                       const showUnpaid = isBralanda && !booking.paid
                       const showCheckinToggle = isBralanda && booking.checkin === todayStr
                       const checkinDone = showCheckinToggle && housekeeping[`${room.id}_${todayStr}`]?.checkin_done
+                      const isPast = isBralanda && booking.checkout <= todayStr
 
                       return (
                         <div
@@ -724,6 +725,7 @@ export default function AdminView() {
                             top: 10,
                             bottom: 10,
                             background: 'linear-gradient(135deg, rgba(95,140,245,0.76), rgba(121,202,255,0.64))',
+                            opacity: isPast ? 0.55 : 1,
                             border: '1px solid rgba(255,255,255,0.36)',
                             borderTopLeftRadius: startsBeforeWeek ? 3 : 16,
                             borderBottomLeftRadius: startsBeforeWeek ? 3 : 16,

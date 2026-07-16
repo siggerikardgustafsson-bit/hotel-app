@@ -663,6 +663,7 @@ export default function StaffView() {
                         const showGreen = isBralanda
                           ? (!!booking.paid && !!checkinHK?.checkin_done && todayStr < booking.checkout)
                           : (checkoutHK?.cleaning_status === 'done' || checkoutHK?.checkout_done)
+                        const isPast = isBralanda && booking.checkout <= todayStr
                         const hasRemark = !!booking.remarks
                         const showUnpaid = isBralanda && !booking.paid
                         const nights = differenceInDays(parseISO(booking.checkout), parseISO(booking.checkin))
@@ -681,6 +682,7 @@ export default function StaffView() {
                               top: 10,
                               bottom: 10,
                               background: showGreen ? C.blockDone : C.block,
+                              opacity: isPast ? 0.55 : 1,
                               border: '1px solid rgba(255,255,255,0.36)',
                               borderTopLeftRadius: startsBeforeWeek ? 3 : 16,
                               borderBottomLeftRadius: startsBeforeWeek ? 3 : 16,
