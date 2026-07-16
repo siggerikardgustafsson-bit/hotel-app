@@ -567,7 +567,7 @@ export default function StaffView() {
                 const isCleaned = isBralanda && hk?.cleaning_status === 'done'
                 return (
                   <div key={room.id} style={{ ...cal.row, ...(isCleaned ? cal.rowCleaned : {}), ...(isOutOfOrder ? cal.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
-                    <div style={cal.roomLabel}>
+                    <div style={{ ...cal.roomLabel, ...(isCleaned ? cal.roomLabelCleaned : {}) }}>
                       <span style={cal.roomName}>{room.name}</span>
                       <span style={cal.roomType}>{room.type}</span>
                       {isOutOfOrder && <span style={cal.outOfOrderMini}>Ur drift</span>}
@@ -1380,6 +1380,7 @@ const cal = {
     width: `${ROOM_COL_PCT}%`, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',
     padding: '0 14px', borderRight: `1px solid ${C.line}`, background: 'rgba(255,255,255,0.34)'
   },
+  roomLabelCleaned: { background: 'rgba(206,238,222,0.75)' },
   roomName: { fontSize: 13, fontWeight: 700, color: C.text },
   roomType: { fontSize: 11, color: C.faint, marginTop: 3 },
   longTermMini: {

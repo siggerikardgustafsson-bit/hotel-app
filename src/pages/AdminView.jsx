@@ -649,7 +649,7 @@ export default function AdminView() {
               const isCleaned = isBralanda && hk?.cleaning_status === 'done'
               return (
                 <div key={room.id} style={{ ...ac.row, ...(isCleaned ? ac.rowCleaned : {}), ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
-                  <div style={ac.roomLabel}>
+                  <div style={{ ...ac.roomLabel, ...(isCleaned ? ac.roomLabelCleaned : {}) }}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
                     {isOutOfOrder && <span style={ac.outOfOrderMini}>Ur drift</span>}
@@ -1713,6 +1713,7 @@ const ac = {
     borderRight: '1px solid rgba(119,136,153,0.18)',
     background: 'rgba(255,255,255,0.34)',
   },
+  roomLabelCleaned: { background: 'rgba(206,238,222,0.75)' },
   roomName: { fontSize: 13, fontWeight: 700, color: '#18212f' },
   roomType: { fontSize: 11, color: '#8fa0b5', marginTop: 3 },
   longTermMini: {
