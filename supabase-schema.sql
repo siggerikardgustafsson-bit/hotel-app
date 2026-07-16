@@ -29,6 +29,7 @@ create table bookings (
   remarks text,
   price text,
   property_id text not null default 'vanersborg',  -- vilket hotell bokningen gäller
+  paid boolean not null default false,             -- har gästen betalat för sin vistelse?
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

@@ -31,11 +31,6 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
-// Upplagda på Booking.com (active) sorteras högst upp, inaktiva sist.
-function roomActiveRank(room) {
-  return room?.active === false ? 1 : 0
-}
-
 function bookableRoomSortRank(room, days) {
   if (!room?.long_term_enabled) return 1
 
@@ -55,7 +50,6 @@ const EMPTY_ROOM = {
   name: '',
   type: '',
   capacity: 1,
-  active: true,
   admin_notes: '',
   long_term_enabled: false,
   long_term_start: '',
@@ -72,6 +66,7 @@ const EMPTY_MANUAL_BOOKING = {
   room_id: '',
   remarks: '',
   price: '',
+  paid: false,
 }
 
 const NUM_DAYS = 7
@@ -118,6 +113,10 @@ export default function AdminView() {
   const [calWidth, setCalWidth] = useState(900)
   const [propertyId, setPropertyId] = useState(getStoredProperty)
   const isMobile = useIsMobile()
+  // De nya funktionerna nedan (redigerbara bokningar, städ/incheckning-kontroller,
+  // betald-bock) är just nu bara aktiverade för Brålanda — Vänersborg är oförändrat.
+  const isBralanda = propertyId === 'bralanda'
+  const todayStr = ds(TODAY)
 
   useEffect(() => {
     // Byt hotell → rensa och ladda om allt filtrerat på vald property.
@@ -157,6 +156,43 @@ export default function AdminView() {
     const map = {}
     ;(data || []).forEach(h => { map[`${h.room_id}_${h.date}`] = h })
     setHousekeeping(map)
+  }
+
+  async function upsertHK(roomId, date, patch) {
+    const key = `${roomId}_${date}`
+    const { data, error } = await supabase
+      .from('housekeeping')
+      .upsert({ room_id: roomId, date, property_id: propertyId, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'room_id,date' })
+      .select()
+      .single()
+    if (error) { alert('Kunde inte spara städstatus: ' + error.message); return }
+    if (data) setHousekeeping(prev => ({ ...prev, [key]: data }))
+  }
+
+  function toggleCleaning(roomId, date) {
+    const key = `${roomId}_${date}`
+    const cur = housekeeping[key]
+    upsertHK(roomId, date, { cleaning_status: cur?.cleaning_status === 'done' ? 'pending' : 'done' })
+  }
+
+  async function updateBookingFields(id, patch) {
+    setSaving(prev => ({ ...prev, [id]: true }))
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    setSaving(prev => ({ ...prev, [id]: false }))
+
+    if (error) {
+      alert('Kunde inte spara: ' + error.message)
+      return
+    }
+    if (data) {
+      setBookings(prev => prev.map(b => b.id === id ? data : b))
+      if (modal?.id === id) setModal(data)
+    }
   }
 
   async function handleXLSFile(e) {
@@ -228,7 +264,7 @@ export default function AdminView() {
     // Hämta befintliga bokningar så manuellt tilldelade rum bevaras vid återimport.
     const { data: existingRows, error: fetchError } = await supabase
       .from('bookings')
-      .select('id, room_id')
+      .select('id, room_id, paid')
       .eq('property_id', propertyId)
       .in('id', ids)
 
@@ -241,11 +277,15 @@ export default function AdminView() {
     const existingById = new Map((existingRows || []).map(row => [row.id, row]))
     const merged = activeRows.map(incoming => {
       const existing = existingById.get(incoming.id)
-      return {
+      const row = {
         ...incoming,
         property_id: propertyId,
         room_id: incoming.room_id || existing?.room_id || null,
       }
+      // Bokningar från Booking.com räknas som betalda automatiskt vid import,
+      // om inte personal redan manuellt ändrat betald-status på en befintlig rad.
+      if (isBralanda) row.paid = existing ? existing.paid : true
+      return row
     })
 
     const { error } = await supabase
@@ -311,6 +351,7 @@ export default function AdminView() {
       property_id: propertyId,
       updated_at: new Date().toISOString(),
     }
+    if (isBralanda) payload.paid = !!form.paid
 
     setSaving(prev => ({ ...prev, _manualBooking: true }))
     const { data, error } = await supabase
@@ -343,7 +384,6 @@ export default function AdminView() {
       name: cleanName,
       type: String(form.type || '').trim(),
       capacity: parseInt(form.capacity, 10) || 1,
-      active: form.active !== false,
       property_id: propertyId,
       admin_notes: String(form.admin_notes || '').trim() || null,
       long_term_enabled: !!form.long_term_enabled,
@@ -371,9 +411,6 @@ export default function AdminView() {
   const assigned   = bookings.filter(b => b.room_id)
   const longTermRooms = rooms.filter(r => isLongTermActiveInDays(r, days))
   const adminDisplayRooms = [...rooms].sort((a, b) => {
-    const aActive = roomActiveRank(a)
-    const bActive = roomActiveRank(b)
-    if (aActive !== bActive) return aActive - bActive
     const aRank = bookableRoomSortRank(a, days)
     const bRank = bookableRoomSortRank(b, days)
     if (aRank !== bRank) return aRank - bRank
@@ -417,6 +454,8 @@ export default function AdminView() {
           onClose={() => setModal(null)}
           onAssign={assignRoom}
           onDelete={deleteBooking}
+          onUpdate={updateBookingFields}
+          isBralanda={isBralanda}
           saving={saving[modal.id]}
         />
       )}
@@ -435,6 +474,7 @@ export default function AdminView() {
           rooms={rooms}
           onClose={() => setManualBookingModal(false)}
           onSave={saveManualBooking}
+          isBralanda={isBralanda}
           saving={saving._manualBooking}
         />
       )}
@@ -533,14 +573,31 @@ export default function AdminView() {
 
             {adminDisplayRooms.map(room => {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
-              const inactive = room.active === false
+              const hk = housekeeping[`${room.id}_${todayStr}`]
               return (
-                <div key={room.id} style={{ ...ac.row, ...(inactive ? ac.rowInactive : {}), minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
-                    {inactive && <span style={ac.inactiveMini}>Ej på Booking.com</span>}
                     {isLongTermActiveInDays(room, days) && <span style={ac.longTermMini}>Långtidsboende</span>}
+                    {isBralanda && (
+                      <div style={ac.hkRow}>
+                        <button
+                          style={{ ...ac.hkPill, ...(hk?.cleaning_status === 'done' ? ac.hkPillDone : {}) }}
+                          onClick={() => toggleCleaning(room.id, todayStr)}
+                          title="Städat & nyckelkort finns – rummet redo för ny gäst"
+                        >
+                          {hk?.cleaning_status === 'done' ? '✓ Städat & kort' : 'Städat & kort'}
+                        </button>
+                        <button
+                          style={{ ...ac.hkPill, ...(hk?.checkin_done ? ac.hkPillIn : {}) }}
+                          onClick={() => upsertHK(room.id, todayStr, { checkin_done: !hk?.checkin_done })}
+                          title="Gäst har checkat in i rummet idag"
+                        >
+                          {hk?.checkin_done ? '✓ Incheckad' : 'Incheckad'}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ position: 'relative', flex: 1, height: '100%' }}>
@@ -563,6 +620,7 @@ export default function AdminView() {
                       const nights = differenceInDays(parseISO(booking.checkout), parseISO(booking.checkin))
                       const showSub = width > dayW * 1.15
                       const hasRemark = !!booking.remarks
+                      const showUnpaid = isBralanda && !booking.paid
 
                       return (
                         <div
@@ -596,6 +654,7 @@ export default function AdminView() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                             <span style={ac.bookingName}>{firstName}</span>
                             {hasRemark && <span style={ac.bookingRemarkDot}>●</span>}
+                            {showUnpaid && <span style={ac.bookingUnpaidDot} title="Ej betald">$</span>}
                           </div>
                           {showSub && <div style={ac.bookingSub}>{nights} natt{nights !== 1 ? 'er' : ''} · {booking.people} pers.</div>}
                         </div>
@@ -612,12 +671,13 @@ export default function AdminView() {
               ['linear-gradient(135deg, rgba(95,140,245,0.76), rgba(121,202,255,0.64))', 'Bokning'],
               ['rgba(246,183,60,0.18)', 'Långtidsboende'],
               ['#f6b73c', '● Meddelande'],
+              ...(isBralanda ? [['#c0392b', '$ Ej betald']] : []),
             ].map(([color, label]) => (
               <div key={label} style={ac.legendItem}>
-                {label.startsWith('●')
-                  ? <span style={{ color, fontSize: 11 }}>●</span>
+                {label.startsWith('●') || label.startsWith('$')
+                  ? <span style={{ color, fontSize: 11, fontWeight: 700 }}>{label[0]}</span>
                   : <div style={{ width: 26, height: 12, borderRadius: 999, background: color, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.45)' }} />}
-                <span style={ac.legendText}>{label.replace('● ', '')}</span>
+                <span style={ac.legendText}>{label.replace(/^[●$]\s*/, '')}</span>
               </div>
             ))}
           </div>
@@ -647,13 +707,15 @@ export default function AdminView() {
                 <table style={s.table}>
                   <thead><tr>
                     <Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
-                    <Th>Kategori (Booking.com)</Th><Th>Tilldela rum</Th><Th></Th>
+                    <Th>Kategori (Booking.com)</Th><Th>Tilldela rum</Th>
+                    {isBralanda && <Th>Betald</Th>}
+                    <Th></Th>
                   </tr></thead>
                   <tbody>
                     {unassigned.map(b => (
                       <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
-                        onDelete={deleteBooking} saving={saving[b.id]}
-                        onInfo={() => setModal(b)} />
+                        onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
+                        onInfo={() => setModal(b)} showPaid={isBralanda} />
                     ))}
                   </tbody>
                 </table>
@@ -667,13 +729,15 @@ export default function AdminView() {
               <table style={s.table}>
                 <thead><tr>
                   <Th>Rum</Th><Th>Gäst</Th><Th>Incheckning</Th><Th>Utcheckning</Th>
-                  <Th>Kategori</Th><Th>Byt rum</Th><Th></Th>
+                  <Th>Kategori</Th><Th>Byt rum</Th>
+                  {isBralanda && <Th>Betald</Th>}
+                  <Th></Th>
                 </tr></thead>
                 <tbody>
                   {assigned.map(b => (
                     <BookingRow key={b.id} b={b} rooms={rooms} onAssign={assignRoom}
-                      onDelete={deleteBooking} saving={saving[b.id]}
-                      onInfo={() => setModal(b)} showRoom />
+                      onDelete={deleteBooking} onTogglePaid={updateBookingFields} saving={saving[b.id]}
+                      onInfo={() => setModal(b)} showRoom showPaid={isBralanda} />
                   ))}
                 </tbody>
               </table>
@@ -745,7 +809,7 @@ export default function AdminView() {
           <div style={s.tableWrap}>
             <table style={s.table}>
               <thead><tr>
-                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th><Th>Booking.com</Th><Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
+                <Th>Rum-ID</Th><Th>Namn</Th><Th>Typ</Th><Th>Kapacitet</Th><Th>Adminanteckning</Th><Th>Långtidsboende</Th><Th>Aktiva bokningar</Th><Th></Th>
               </tr></thead>
               <tbody>
                 {rooms.map(r => {
@@ -757,11 +821,6 @@ export default function AdminView() {
                       <Td style={{ fontWeight: 500 }}>{r.name}</Td>
                       <Td>{r.type}</Td>
                       <Td>{r.capacity} pers.</Td>
-                      <Td>
-                        {r.active === false
-                          ? <span style={s.notListedBadge}>Ej upplagd</span>
-                          : <span style={s.listedBadge}>Upplagd</span>}
-                      </Td>
                       <Td>
                         {r.admin_notes
                           ? <span style={s.notePreview}>{String(r.admin_notes).slice(0, 80)}{String(r.admin_notes).length > 80 ? '…' : ''}</span>
@@ -786,7 +845,7 @@ export default function AdminView() {
   )
 }
 
-function ManualBookingModal({ rooms, onClose, onSave, saving }) {
+function ManualBookingModal({ rooms, onClose, onSave, isBralanda, saving }) {
   const [form, setForm] = useState(EMPTY_MANUAL_BOOKING)
 
   function setField(field, value) {
@@ -862,6 +921,17 @@ function ManualBookingModal({ rooms, onClose, onSave, saving }) {
             onChange={e => setField('remarks', e.target.value)}
             placeholder="Ex. Sen ankomst, betalt kontant, önskar extrasäng..."
           />
+
+          {isBralanda && (
+            <label style={ms.checkRow}>
+              <input
+                type="checkbox"
+                checked={!!form.paid}
+                onChange={e => setField('paid', e.target.checked)}
+              />
+              <span>Betalat för sin vistelse</span>
+            </label>
+          )}
         </div>
 
         <div style={ms.footer}>
@@ -934,7 +1004,6 @@ function RoomModal({ initial, onClose, onSave, saving }) {
     ...EMPTY_ROOM,
     ...initial,
     capacity: initial.capacity || 1,
-    active: initial.active !== false,
     admin_notes: initial.admin_notes || '',
     long_term_enabled: !!initial.long_term_enabled,
     long_term_start: initial.long_term_start || '',
@@ -976,15 +1045,6 @@ function RoomModal({ initial, onClose, onSave, saving }) {
 
           <label style={ms.label}>Kapacitet</label>
           <input style={ms.input} type="number" min="1" value={form.capacity} onChange={e => setField('capacity', e.target.value)} />
-
-          <label style={ms.checkRow}>
-            <input
-              type="checkbox"
-              checked={form.active !== false}
-              onChange={e => setField('active', e.target.checked)}
-            />
-            <span>Upplagd på Booking.com (aktiv)</span>
-          </label>
 
           <label style={ms.label}>Adminanteckning på rummet</label>
           <textarea
@@ -1037,14 +1097,52 @@ function RoomModal({ initial, onClose, onSave, saving }) {
 }
 
 // ── DETAIL MODAL ──
-function DetailModal({ booking: b, rooms, bookings, onClose, onAssign, onDelete, saving }) {
+function DetailModal({ booking: b, rooms, bookings, onClose, onAssign, onDelete, onUpdate, isBralanda, saving }) {
   const room = rooms.find(r => r.id === b.room_id)
   const nights = differenceInDays(parseISO(b.checkout), parseISO(b.checkin))
   const candidates = extractRoomCandidates(b.unit_type)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState(null)
 
   const siblings = b.multi_room_original_id
     ? bookings.filter(x => x.multi_room_original_id === b.multi_room_original_id && x.id !== b.id)
     : []
+
+  function startEditing() {
+    setForm({
+      guest_name: b.guest_name || '',
+      checkin: b.checkin || '',
+      checkout: b.checkout || '',
+      people: b.people || 1,
+      unit_type: b.unit_type || '',
+      price: b.price || '',
+      remarks: b.remarks || '',
+    })
+    setEditing(true)
+  }
+
+  function setField(field, value) {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  function saveEdits() {
+    const guestName = String(form.guest_name || '').trim()
+    const checkin = String(form.checkin || '').trim()
+    const checkout = String(form.checkout || '').trim()
+    if (!guestName || !checkin || !checkout) { alert('Gäst, incheckning och utcheckning krävs.'); return }
+    if (checkout <= checkin) { alert('Utcheckning måste vara efter incheckning.'); return }
+
+    onUpdate(b.id, {
+      guest_name: guestName,
+      checkin,
+      checkout,
+      people: parseInt(form.people, 10) || 1,
+      unit_type: String(form.unit_type || '').trim(),
+      price: String(form.price || '').trim() || null,
+      remarks: String(form.remarks || '').trim() || null,
+    })
+    setEditing(false)
+  }
 
   return (
     <div style={ms.overlay} onClick={onClose}>
@@ -1054,25 +1152,86 @@ function DetailModal({ booking: b, rooms, bookings, onClose, onAssign, onDelete,
             <div style={ms.roomLabel}>{room ? room.name : 'Inget rum tilldelat'}</div>
             <div style={ms.roomType}>{room?.type || b.unit_type}</div>
           </div>
-          <button style={ms.closeBtn} onClick={onClose}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isBralanda && !editing && (
+              <button style={ms.editIconBtn} onClick={startEditing}>Redigera</button>
+            )}
+            <button style={ms.closeBtn} onClick={onClose}>✕</button>
+          </div>
         </div>
 
-        <div style={ms.guestName}>{b.guest_name}</div>
+        {isBralanda && editing ? (
+          <div style={ms.form}>
+            <label style={ms.label}>Gäst</label>
+            <input style={ms.input} value={form.guest_name} onChange={e => setField('guest_name', e.target.value)} />
 
-        <div style={ms.infoGrid}>
-          <InfoRow label="Incheckning"   value={fmtFull(b.checkin)} />
-          <InfoRow label="Utcheckning"   value={fmtFull(b.checkout)} />
-          <InfoRow label="Nätter"        value={nights} />
-          <InfoRow label="Antal gäster"  value={`${b.people} person${b.people > 1 ? 'er' : ''}`} />
-          <InfoRow label="Bokningsnr"    value={`#${b.multi_room_original_id || b.id}`} />
-          <InfoRow label="Rumskategori"  value={b.unit_type} />
-          {b.price && <InfoRow label="Pris" value={b.price} />}
-          {b.multi_room_total > 1 && (
-            <InfoRow label="Multibokning" value={`Rum ${b.multi_room_index} av ${b.multi_room_total}`} accent />
-          )}
-        </div>
+            <div style={ms.twoCols}>
+              <div>
+                <label style={ms.label}>Incheckning</label>
+                <input style={ms.input} type="date" value={form.checkin} onChange={e => setField('checkin', e.target.value)} />
+              </div>
+              <div>
+                <label style={ms.label}>Utcheckning</label>
+                <input style={ms.input} type="date" value={form.checkout} onChange={e => setField('checkout', e.target.value)} />
+              </div>
+            </div>
 
-        {siblings.length > 0 && (
+            <div style={ms.twoCols}>
+              <div>
+                <label style={ms.label}>Antal gäster</label>
+                <input style={ms.input} type="number" min="1" value={form.people} onChange={e => setField('people', e.target.value)} />
+              </div>
+              <div>
+                <label style={ms.label}>Pris</label>
+                <input style={ms.input} value={form.price} onChange={e => setField('price', e.target.value)} />
+              </div>
+            </div>
+
+            <label style={ms.label}>Rumskategori</label>
+            <input style={ms.input} value={form.unit_type} onChange={e => setField('unit_type', e.target.value)} />
+
+            <label style={ms.label}>Anteckning</label>
+            <textarea style={ms.textarea} value={form.remarks} onChange={e => setField('remarks', e.target.value)} />
+
+            <div style={ms.editActions}>
+              <button style={ms.deleteBtn} onClick={() => setEditing(false)}>Avbryt</button>
+              <button style={ms.doneBtn} onClick={saveEdits} disabled={saving}>{saving ? 'Sparar...' : 'Spara ändringar'}</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={ms.guestName}>{b.guest_name}</div>
+
+            <div style={ms.infoGrid}>
+              <InfoRow label="Incheckning"   value={fmtFull(b.checkin)} />
+              <InfoRow label="Utcheckning"   value={fmtFull(b.checkout)} />
+              <InfoRow label="Nätter"        value={nights} />
+              <InfoRow label="Antal gäster"  value={`${b.people} person${b.people > 1 ? 'er' : ''}`} />
+              <InfoRow label="Bokningsnr"    value={`#${b.multi_room_original_id || b.id}`} />
+              <InfoRow label="Rumskategori"  value={b.unit_type} />
+              {b.price && <InfoRow label="Pris" value={b.price} />}
+              {b.multi_room_total > 1 && (
+                <InfoRow label="Multibokning" value={`Rum ${b.multi_room_index} av ${b.multi_room_total}`} accent />
+              )}
+            </div>
+          </>
+        )}
+
+        {isBralanda && !editing && (
+          <div style={ms.assignSection}>
+            <label style={ms.paidRow}>
+              <input
+                type="checkbox"
+                checked={!!b.paid}
+                disabled={saving}
+                onChange={() => onUpdate(b.id, { paid: !b.paid })}
+              />
+              <span>Betalat för sin vistelse</span>
+            </label>
+          </div>
+        )}
+
+        {!editing && siblings.length > 0 && (
           <div style={ms.siblings}>
             <div style={ms.siblingsLabel}>Övriga rum i samma bokning</div>
             {siblings.map(sb => {
@@ -1087,40 +1246,44 @@ function DetailModal({ booking: b, rooms, bookings, onClose, onAssign, onDelete,
           </div>
         )}
 
-        {b.remarks && (
+        {!editing && b.remarks && (
           <div style={ms.remarks}>
             <div style={ms.remarksLabel}>Meddelande från gäst</div>
             <div style={ms.remarksText}>{b.remarks}</div>
           </div>
         )}
 
-        <div style={ms.assignSection}>
-          <div style={ms.assignLabel}>Tilldela rum</div>
-          <select
-            value={b.room_id || ''}
-            onChange={e => onAssign(b.id, e.target.value)}
-            style={ms.select}
-            disabled={saving}
-          >
-            <option value="">– Välj rum –</option>
-            {candidates.length > 0 && (
-              <optgroup label="Förslag (från kategori)">
-                {candidates.map(c => {
-                  const r = rooms.find(r => r.id === c)
-                  return r ? <option key={c} value={c}>{r.name} ({r.type})</option> : null
-                })}
+        {!editing && (
+          <div style={ms.assignSection}>
+            <div style={ms.assignLabel}>Tilldela rum</div>
+            <select
+              value={b.room_id || ''}
+              onChange={e => onAssign(b.id, e.target.value)}
+              style={ms.select}
+              disabled={saving}
+            >
+              <option value="">– Välj rum –</option>
+              {candidates.length > 0 && (
+                <optgroup label="Förslag (från kategori)">
+                  {candidates.map(c => {
+                    const r = rooms.find(r => r.id === c)
+                    return r ? <option key={c} value={c}>{r.name} ({r.type})</option> : null
+                  })}
+                </optgroup>
+              )}
+              <optgroup label="Alla rum">
+                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} – {r.type}</option>)}
               </optgroup>
-            )}
-            <optgroup label="Alla rum">
-              {rooms.map(r => <option key={r.id} value={r.id}>{r.name} – {r.type}</option>)}
-            </optgroup>
-          </select>
-        </div>
+            </select>
+          </div>
+        )}
 
-        <div style={ms.footer}>
-          <button style={ms.deleteBtn} onClick={() => onDelete(b.id)}>Ta bort bokning</button>
-          <button style={ms.doneBtn} onClick={onClose}>Stäng</button>
-        </div>
+        {!editing && (
+          <div style={ms.footer}>
+            <button style={ms.deleteBtn} onClick={() => onDelete(b.id)}>Ta bort bokning</button>
+            <button style={ms.doneBtn} onClick={onClose}>Stäng</button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1135,7 +1298,7 @@ function InfoRow({ label, value, accent }) {
   )
 }
 
-function BookingRow({ b, rooms, onAssign, onDelete, saving, showRoom, onInfo }) {
+function BookingRow({ b, rooms, onAssign, onDelete, onTogglePaid, saving, showRoom, showPaid, onInfo }) {
   const room = rooms.find(r => r.id === b.room_id)
   const candidates = extractRoomCandidates(b.unit_type)
   return (
@@ -1167,6 +1330,19 @@ function BookingRow({ b, rooms, onAssign, onDelete, saving, showRoom, onInfo }) 
           </optgroup>
         </select>
       </td>
+      {showPaid && (
+        <td style={s.td}>
+          <label style={s.paidCheckLabel} onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={!!b.paid}
+              disabled={saving}
+              onChange={() => onTogglePaid(b.id, { paid: !b.paid })}
+            />
+            {b.paid ? 'Betald' : 'Obetald'}
+          </label>
+        </td>
+      )}
       <td style={s.td}>
         <button style={s.infoBtn} onClick={onInfo}>ℹ</button>
         <button style={s.deleteBtn} onClick={() => onDelete(b.id)}>✕</button>
@@ -1260,8 +1436,7 @@ const s = {
   roomId: { fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: '#1a1a1a' },
   activeBadge: { background: '#EAF3DE', color: '#27500A', fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 20 },
   inactiveBadge: { color: '#ccc', fontSize: 12 },
-  listedBadge: { background: '#EAF3DE', color: '#27500A', fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
-  notListedBadge: { background: '#eef0f3', color: '#8a93a0', fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 20, whiteSpace: 'nowrap' },
+  paidCheckLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', cursor: 'pointer', whiteSpace: 'nowrap' },
   notePreview: { fontSize: 12, color: '#555', lineHeight: 1.4 },
   emptyMuted: { color: '#bbb', fontSize: 12 },
   longTermBadge: { background: '#fff3cf', color: '#7a5a10', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 20, whiteSpace: 'nowrap' },
@@ -1337,18 +1512,20 @@ const ac = {
   headerRow: { display: 'flex', borderBottom: '1px solid rgba(119,136,153,0.28)', background: 'rgba(255,255,255,0.28)' },
   todayDot: { width: 6, height: 6, borderRadius: '50%', background: '#4f8df7', margin: '6px auto 0', boxShadow: '0 0 0 5px rgba(79,141,247,0.12)' },
   row: { display: 'flex', height: ROW_HEIGHT, borderBottom: '1px solid rgba(119,136,153,0.18)', background: 'rgba(255,255,255,0.28)', position: 'relative' },
-  rowInactive: { background: 'rgba(225,228,233,0.55)', opacity: 0.62 },
-  inactiveMini: {
-    display: 'inline-block',
-    marginTop: 6,
-    padding: '3px 7px',
+  hkRow: { display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' },
+  hkPill: {
+    fontSize: 9,
+    fontWeight: 700,
+    padding: '3px 6px',
     borderRadius: 999,
-    background: 'rgba(120,136,153,0.18)',
+    border: '1px solid rgba(119,136,153,0.28)',
+    background: 'rgba(255,255,255,0.7)',
     color: '#5f7087',
-    fontSize: 10,
-    fontWeight: 800,
+    cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
+  hkPillDone: { background: 'rgba(55,184,122,0.16)', color: '#1f7a4d', borderColor: 'rgba(55,184,122,0.3)' },
+  hkPillIn: { background: 'rgba(79,141,247,0.16)', color: '#2f65c4', borderColor: 'rgba(79,141,247,0.3)' },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`,
     flexShrink: 0,
@@ -1375,6 +1552,7 @@ const ac = {
   bookingName: { fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   bookingSub: { fontSize: 10, color: 'rgba(255,255,255,0.86)', marginTop: 2, whiteSpace: 'nowrap' },
   bookingRemarkDot: { fontSize: 9, color: '#fff3b0', flexShrink: 0 },
+  bookingUnpaidDot: { fontSize: 10, fontWeight: 800, color: '#ffd9d9', flexShrink: 0 },
   continuesLeft: {
     position: 'absolute',
     left: 0,
@@ -1443,4 +1621,7 @@ const ms = {
   footer: { display: 'flex', justifyContent: 'space-between', padding: '12px 18px 18px', borderTop: '1px solid #f0ede7', gap: 8 },
   deleteBtn: { fontSize: 12, padding: '6px 12px', border: '1px solid #f0c0c0', borderRadius: 7, background: 'transparent', cursor: 'pointer', color: '#c0392b' },
   doneBtn: { fontSize: 13, padding: '7px 18px', border: 'none', borderRadius: 7, background: '#1a1a1a', color: '#fff', cursor: 'pointer', fontWeight: 500 },
+  editIconBtn: { fontSize: 11, fontWeight: 600, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#1a1a1a' },
+  editActions: { display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 0 4px' },
+  paidRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#333', cursor: 'pointer' },
 }
