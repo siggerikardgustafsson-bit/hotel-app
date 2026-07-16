@@ -712,7 +712,8 @@ export default function AdminView() {
                       const showUnpaid = isBralanda && !booking.paid
                       const showCheckinToggle = isBralanda && booking.checkin === todayStr
                       const checkinDone = showCheckinToggle && housekeeping[`${room.id}_${todayStr}`]?.checkin_done
-                      const isPast = isBralanda && booking.checkout <= todayStr
+                      // Blekt så fort incheckningsdagen har passerat, inte bara efter utcheckning.
+                      const isPast = isBralanda && booking.checkin < todayStr
 
                       return (
                         <div

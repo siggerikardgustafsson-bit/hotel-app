@@ -663,7 +663,8 @@ export default function StaffView() {
                         const showGreen = isBralanda
                           ? (!!booking.paid && !!checkinHK?.checkin_done && todayStr < booking.checkout)
                           : (checkoutHK?.cleaning_status === 'done' || checkoutHK?.checkout_done)
-                        const isPast = isBralanda && booking.checkout <= todayStr
+                        // Blekt så fort incheckningsdagen har passerat, inte bara efter utcheckning.
+                        const isPast = isBralanda && booking.checkin < todayStr
                         const hasRemark = !!booking.remarks
                         const showUnpaid = isBralanda && !booking.paid
                         const nights = differenceInDays(parseISO(booking.checkout), parseISO(booking.checkin))
@@ -701,11 +702,11 @@ export default function StaffView() {
                               transition: 'transform 0.14s ease, opacity 0.14s ease',
                             }}
                             onMouseEnter={e => {
-                              e.currentTarget.style.opacity = '0.94'
+                              e.currentTarget.style.opacity = isPast ? '0.75' : '0.94'
                               e.currentTarget.style.transform = 'translateY(-1px)'
                             }}
                             onMouseLeave={e => {
-                              e.currentTarget.style.opacity = '1'
+                              e.currentTarget.style.opacity = isPast ? '0.55' : '1'
                               e.currentTarget.style.transform = 'translateY(0)'
                             }}
                           >
