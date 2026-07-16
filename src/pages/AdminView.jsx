@@ -982,6 +982,10 @@ export default function AdminView() {
             </div>
           </div>
 
+          <div style={s.keyNoteBox}>
+            <strong>Skåpskoder:</strong> Skåp 1: 41# · Skåp 2: 52# · Skåp 3: 63# · Skåp 4: 74# · Skåp 5: 85# · Skåp 6: 96#
+          </div>
+
           <div style={s.keySlotGrid}>
             {keyCabinet.map(slot => (
               <div key={slot.slot_number} style={s.keySlotCard}>
@@ -1663,6 +1667,7 @@ const s = {
   searchInput: { flex: 1, maxWidth: 360, fontSize: 13, padding: '8px 12px', border: '1px solid #ddd', borderRadius: 7, background: '#fff' },
   searchClearBtn: { fontSize: 12, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#888' },
   saveBtn: { padding: '8px 16px', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+  keyNoteBox: { background: '#fff8dc', border: '1px solid #f3db86', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#7a5a10', marginBottom: 16 },
   keySlotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 },
   keySlotCard: { background: '#fff', border: '1px solid #e8e5df', borderRadius: 10, padding: '14px 16px' },
   keySlotLabel: { fontSize: 13, fontWeight: 700, color: '#18212f', marginBottom: 8 },

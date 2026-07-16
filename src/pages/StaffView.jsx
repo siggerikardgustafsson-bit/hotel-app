@@ -760,6 +760,10 @@ export default function StaffView() {
               <div style={{ ...p.heroChip, ...(isMobile ? p.heroChipMobile : {}) }}>Ange vilket rums nycklar som ligger var</div>
             </div>
 
+            <div style={p.keyNoteBox}>
+              <strong>Skåpskoder:</strong> Skåp 1: 41# · Skåp 2: 52# · Skåp 3: 63# · Skåp 4: 74# · Skåp 5: 85# · Skåp 6: 96#
+            </div>
+
             <div style={p.keySlotGrid}>
               {keyCabinet.map(slot => (
                 <div key={slot.slot_number} style={p.keySlotCard}>
@@ -1491,6 +1495,7 @@ const p = {
     marginBottom: 10,
     cursor: 'pointer',
   },
+  keyNoteBox: { background: 'rgba(255,248,220,0.68)', border: '1px solid #f3db86', borderRadius: 14, padding: '12px 16px', fontSize: 13, color: '#7a5a10', marginBottom: 18 },
   keySlotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 },
   keySlotCard: { ...glassPanel, borderRadius: 20, padding: '16px 18px', background: 'rgba(255,255,255,0.70)' },
   keySlotLabel: { fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 },
