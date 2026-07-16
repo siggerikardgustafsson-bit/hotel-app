@@ -1304,40 +1304,37 @@ function LongTermRoomCard({ room }) {
 function TodayCard({ b, rooms, type, color, onClick, showPaid, onTogglePaid, children }) {
   const room = rooms.find(r => r.id === b.room_id)
   const nights = differenceInDays(parseISO(b.checkout), parseISO(b.checkin))
+  // Typen (utcheckning/incheckning/bor kvar) framgår redan av kolumnrubriken ovanför,
+  // så den upprepas inte per kort här — det var den största källan till plottrighet.
+  const timeline = type === 'checkout'
+    ? `Ankom ${b.checkin}`
+    : type === 'checkin'
+      ? 'Ankommer idag 14:00'
+      : `${b.checkin} → ${b.checkout}`
+
   return (
     <div style={{ ...p.card, boxShadow: `${C.shadowSoft}, inset 0 1px 0 ${color}22` }} onClick={onClick}>
       <div style={p.cardTop}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ ...p.cardRoom, ...(room ? {} : { color: C.amber }) }}>{room?.name || (b.room_id ? `Rum ${b.room_id}` : 'Rum ej tilldelat')}</span>
-          <span style={p.cardType}>{room?.type}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {showPaid && (
-            <span
-              style={{ ...p.paidChip, ...(b.paid ? p.paidChipDone : {}) }}
-              onClick={e => { e.stopPropagation(); onTogglePaid(b.id, { paid: !b.paid }) }}
-            >
-              {b.paid ? '✓ Betald' : 'Obetald'}
-            </span>
-          )}
-          <span style={{ ...p.cardBadge, background: `${color}16`, color }}>
-            {type === 'checkout' ? 'Utcheckning' : type === 'checkin' ? 'Incheckning' : 'Bor kvar'}
+        <span style={{ ...p.cardRoom, ...(room ? {} : { color: C.amber }) }}>
+          {room?.name || (b.room_id ? `Rum ${b.room_id}` : 'Rum ej tilldelat')}
+        </span>
+        {showPaid && (
+          <span
+            style={{ ...p.paidChip, ...(b.paid ? p.paidChipDone : {}) }}
+            onClick={e => { e.stopPropagation(); onTogglePaid(b.id, { paid: !b.paid }) }}
+          >
+            {b.paid ? '✓ Betald' : 'Obetald'}
           </span>
-        </div>
+        )}
       </div>
-      <div style={p.cardGuest}>
-        {b.guest_name}
-        <span style={p.cardMeta}>{b.people} pers. · {nights} natt{nights !== 1 ? 'er' : ''}</span>
+      <div style={p.cardGuest}>{b.guest_name}</div>
+      <div style={p.cardMeta}>
+        {room?.type ? `${room.type} · ` : ''}{b.people} pers. · {nights} natt{nights !== 1 ? 'er' : ''}
       </div>
-      <div style={p.cardTimes}>
-        {type === 'checkout' && `Checkat in ${b.checkin} · Checkar ut idag 11:00`}
-        {type === 'checkin' && `Checkar in idag 14:00 · Checkar ut ${b.checkout}`}
-        {type === 'stay' && `${b.checkin} → ${b.checkout}`}
-      </div>
+      <div style={p.cardTimes}>{timeline}</div>
       {b.remarks && (
         <div style={p.remark}>
-          <span style={{ color: C.amber, marginRight: 6, fontSize: 10 }}>●</span>
-          {b.remarks.replace(/&#39;/g, "'").slice(0, 130)}{b.remarks.length > 130 ? '…' : ''}
+          {b.remarks.replace(/&#39;/g, "'").slice(0, 100)}{b.remarks.length > 100 ? '…' : ''}
         </div>
       )}
       {children}
@@ -1521,12 +1518,12 @@ const p = {
   cardBadge: { fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 999 },
   paidChip: { fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 999, background: C.redSoft, color: '#c0392b', cursor: 'pointer', whiteSpace: 'nowrap' },
   paidChipDone: { background: C.greenSoft, color: '#1f7a4d' },
-  cardGuest: { fontSize: 17, fontWeight: 700, color: C.text, marginBottom: 4, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
-  cardMeta: { fontSize: 12, color: C.faint, fontWeight: 500 },
+  cardGuest: { fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 3 },
+  cardMeta: { fontSize: 12, color: C.faint, fontWeight: 500, marginBottom: 2 },
   cardTimes: { fontSize: 13, color: C.muted, marginBottom: 2 },
   remark: {
-    fontSize: 12, color: '#8b6a19', background: 'rgba(255, 247, 226, 0.7)', border: '1px solid rgba(255, 226, 165, 0.8)',
-    borderRadius: 16, padding: '8px 11px', marginTop: 10, lineHeight: 1.5
+    fontSize: 12, color: C.muted, borderLeft: `2px solid ${C.amber}`,
+    paddingLeft: 8, marginTop: 8, lineHeight: 1.45
   },
   actions: { display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' },
   empty: { ...glassPanel, borderRadius: 20, fontSize: 13, color: C.faint, padding: '14px 16px' },
