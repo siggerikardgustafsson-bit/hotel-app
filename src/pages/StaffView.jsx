@@ -942,6 +942,20 @@ function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleani
               </optgroup>
             </select>
 
+            {b.from_booking_com ? (
+              <div style={m.bookingComBadge}>🌐 Från Booking.com</div>
+            ) : (
+              <label style={m.paidRow}>
+                <input
+                  type="checkbox"
+                  checked={false}
+                  disabled={saving}
+                  onChange={() => onUpdate(b.id, { from_booking_com: true, paid: true })}
+                />
+                <span>Markera som Booking.com-bokning</span>
+              </label>
+            )}
+
             <label style={m.paidRow}>
               <input
                 type="checkbox"
@@ -1684,4 +1698,9 @@ const m = {
   },
   assignSection: { padding: '0 20px 16px' },
   paidRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: C.text, marginTop: 12, cursor: 'pointer' },
+  bookingComBadge: {
+    display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12,
+    padding: '5px 11px', borderRadius: 20, background: '#e6f0ff', color: '#0C447C',
+    fontSize: 12, fontWeight: 700,
+  },
 }

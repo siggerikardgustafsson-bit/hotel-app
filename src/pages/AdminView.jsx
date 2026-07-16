@@ -335,6 +335,7 @@ export default function AdminView() {
       // Bokningar från Booking.com räknas som betalda automatiskt vid import,
       // om inte personal redan manuellt ändrat betald-status på en befintlig rad.
       if (isBralanda) row.paid = existing ? existing.paid : true
+      row.from_booking_com = true
       return row
     })
 
@@ -1432,6 +1433,19 @@ function DetailModal({ booking: b, rooms, bookings, onClose, onAssign, onDelete,
 
         {isBralanda && !editing && (
           <div style={ms.assignSection}>
+            {b.from_booking_com ? (
+              <div style={ms.bookingComBadge}>🌐 Från Booking.com</div>
+            ) : (
+              <label style={{ ...ms.paidRow, marginBottom: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={false}
+                  disabled={saving}
+                  onChange={() => onUpdate(b.id, { from_booking_com: true, paid: true })}
+                />
+                <span>Markera som Booking.com-bokning</span>
+              </label>
+            )}
             <label style={ms.paidRow}>
               <input
                 type="checkbox"
@@ -1873,4 +1887,9 @@ const ms = {
   editIconBtn: { fontSize: 11, fontWeight: 600, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6, background: '#fff', cursor: 'pointer', color: '#1a1a1a' },
   editActions: { display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 0 4px' },
   paidRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#333', cursor: 'pointer' },
+  bookingComBadge: {
+    display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10,
+    padding: '5px 11px', borderRadius: 20, background: '#e6f0ff', color: '#0C447C',
+    fontSize: 12, fontWeight: 700,
+  },
 }
