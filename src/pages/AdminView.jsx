@@ -71,6 +71,7 @@ const EMPTY_MANUAL_BOOKING = {
 
 const NUM_DAYS = 7
 const ROW_HEIGHT = 68
+const ROW_HEIGHT_BRALANDA = 92
 const ROOM_COL_PCT = 13
 
 
@@ -588,8 +589,9 @@ export default function AdminView() {
             {adminDisplayRooms.map(room => {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
               const hk = housekeeping[`${room.id}_${todayStr}`]
+              const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
               return (
-                <div key={room.id} style={{ ...ac.row, minWidth: calendarBaseWidth }}>
+                <div key={room.id} style={{ ...ac.row, height: rowHeight, minWidth: calendarBaseWidth }}>
                   <div style={ac.roomLabel}>
                     <span style={ac.roomName}>{room.name}</span>
                     <span style={ac.roomType}>{room.type}</span>
@@ -602,13 +604,6 @@ export default function AdminView() {
                           title="Städat & nyckelkort finns – rummet redo för ny gäst"
                         >
                           {hk?.cleaning_status === 'done' ? '✓ Städat & kort' : 'Städat & kort'}
-                        </button>
-                        <button
-                          style={{ ...ac.hkPill, ...(hk?.checkin_done ? ac.hkPillIn : {}) }}
-                          onClick={() => upsertHK(room.id, todayStr, { checkin_done: !hk?.checkin_done })}
-                          title="Gäst har checkat in i rummet idag"
-                        >
-                          {hk?.checkin_done ? '✓ Incheckad' : 'Incheckad'}
                         </button>
                       </div>
                     )}
@@ -635,6 +630,8 @@ export default function AdminView() {
                       const showSub = width > dayW * 1.15
                       const hasRemark = !!booking.remarks
                       const showUnpaid = isBralanda && !booking.paid
+                      const showCheckinToggle = isBralanda && booking.checkin === todayStr
+                      const checkinDone = showCheckinToggle && housekeeping[`${room.id}_${todayStr}`]?.checkin_done
 
                       return (
                         <div
@@ -665,10 +662,19 @@ export default function AdminView() {
                         >
                           {startsBeforeWeek && <div style={ac.continuesLeft} />}
                           {endsAfterWeek && <div style={ac.continuesRight} />}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flexWrap: 'wrap' }}>
                             <span style={ac.bookingName}>{firstName}</span>
                             {hasRemark && <span style={ac.bookingRemarkDot}>●</span>}
                             {showUnpaid && <span style={ac.bookingUnpaidDot} title="Ej betald">$</span>}
+                            {showCheckinToggle && (
+                              <span
+                                onClick={e => { e.stopPropagation(); upsertHK(room.id, todayStr, { checkin_done: !checkinDone }) }}
+                                style={{ ...ac.bookingCheckinChip, ...(checkinDone ? ac.bookingCheckinChipDone : {}) }}
+                                title="Klicka för att markera in-/utcheckad"
+                              >
+                                {checkinDone ? '✓ Incheckad' : 'Incheckad'}
+                              </span>
+                            )}
                           </div>
                           {showSub && <div style={ac.bookingSub}>{nights} natt{nights !== 1 ? 'er' : ''} · {booking.people} pers.</div>}
                         </div>
@@ -1563,7 +1569,6 @@ const ac = {
     whiteSpace: 'nowrap',
   },
   hkPillDone: { background: 'rgba(55,184,122,0.16)', color: '#1f7a4d', borderColor: 'rgba(55,184,122,0.3)' },
-  hkPillIn: { background: 'rgba(79,141,247,0.16)', color: '#2f65c4', borderColor: 'rgba(79,141,247,0.3)' },
   roomLabel: {
     width: `${ROOM_COL_PCT}%`,
     flexShrink: 0,
@@ -1591,6 +1596,18 @@ const ac = {
   bookingSub: { fontSize: 10, color: 'rgba(255,255,255,0.86)', marginTop: 2, whiteSpace: 'nowrap' },
   bookingRemarkDot: { fontSize: 9, color: '#fff3b0', flexShrink: 0 },
   bookingUnpaidDot: { fontSize: 10, fontWeight: 800, color: '#ffd9d9', flexShrink: 0 },
+  bookingCheckinChip: {
+    fontSize: 9,
+    fontWeight: 700,
+    padding: '2px 6px',
+    borderRadius: 999,
+    background: 'rgba(255,255,255,0.32)',
+    color: '#fff',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+  bookingCheckinChipDone: { background: 'rgba(255,255,255,0.9)', color: '#1f7a4d' },
   continuesLeft: {
     position: 'absolute',
     left: 0,
