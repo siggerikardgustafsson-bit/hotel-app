@@ -143,6 +143,7 @@ export default function AdminView() {
   const TODAY = useToday()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [housekeeping, setHousekeeping] = useState({})
+  const [keyCabinet, setKeyCabinet] = useState([])
   const [calRef, setCalRef] = useState(null)
   const [calWidth, setCalWidth] = useState(900)
   const [propertyId, setPropertyId] = useState(getStoredProperty)
@@ -154,8 +155,8 @@ export default function AdminView() {
 
   useEffect(() => {
     // Byt hotell → rensa och ladda om allt filtrerat på vald property.
-    setRooms([]); setBookings([]); setHousekeeping({})
-    loadRooms(); loadBookings(); fetchHousekeeping()
+    setRooms([]); setBookings([]); setHousekeeping({}); setKeyCabinet([])
+    loadRooms(); loadBookings(); fetchHousekeeping(); loadKeyCabinet()
     // Realtime: bokningar uppdateras live (mejl/iCal-synk, andra flikar).
     const unsubscribe = subscribeToBookings(setBookings, propertyId)
     return unsubscribe
@@ -190,6 +191,21 @@ export default function AdminView() {
     const map = {}
     ;(data || []).forEach(h => { map[`${h.room_id}_${h.date}`] = h })
     setHousekeeping(map)
+  }
+
+  async function loadKeyCabinet() {
+    const { data } = await supabase.from('key_cabinet').select('*').eq('property_id', propertyId).order('slot_number')
+    setKeyCabinet(data || [])
+  }
+
+  async function setKeySlotRoom(slotNumber, roomId) {
+    const { data, error } = await supabase
+      .from('key_cabinet')
+      .upsert({ property_id: propertyId, slot_number: slotNumber, room_id: roomId || null, updated_at: new Date().toISOString() }, { onConflict: 'property_id,slot_number' })
+      .select()
+      .single()
+    if (error) { alert('Kunde inte spara nyckelskåpet: ' + error.message); return }
+    if (data) setKeyCabinet(prev => prev.map(k => k.slot_number === slotNumber ? data : k))
   }
 
   async function upsertHK(roomId, date, patch) {
@@ -580,6 +596,7 @@ export default function AdminView() {
           <TabBtn label="Bokningar" active={tab==='bookings'} onClick={() => setTab('bookings')} />
           <TabBtn label="Importera XLS" active={tab==='import'} onClick={() => setTab('import')} badge={importPreview.length || null} />
           <TabBtn label="Rum" active={tab==='rooms'} onClick={() => setTab('rooms')} />
+          {isBralanda && <TabBtn label="I nyckelskåpet" active={tab==='keys'} onClick={() => setTab('keys')} />}
           <button style={{ ...s.signoutBtn, ...(isMobile ? s.signoutBtnMobile : {}) }} onClick={signOut}>Logga ut</button>
         </div>
       </div>
@@ -950,6 +967,33 @@ export default function AdminView() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {tab === 'keys' && isBralanda && (
+        <div>
+          <div style={s.previewHeader}>
+            <div>
+              <span style={s.previewTitle}>I nyckelskåpet</span>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>Ange vilket rums nycklar som ligger i respektive skåp.</div>
+            </div>
+          </div>
+
+          <div style={s.keySlotGrid}>
+            {keyCabinet.map(slot => (
+              <div key={slot.slot_number} style={s.keySlotCard}>
+                <div style={s.keySlotLabel}>Skåp {slot.slot_number}</div>
+                <select
+                  style={s.keySlotSelect}
+                  value={slot.room_id || ''}
+                  onChange={e => setKeySlotRoom(slot.slot_number, e.target.value)}
+                >
+                  <option value="">Tomt</option>
+                  {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1617,6 +1661,10 @@ const s = {
   searchInput: { flex: 1, maxWidth: 360, fontSize: 13, padding: '8px 12px', border: '1px solid #ddd', borderRadius: 7, background: '#fff' },
   searchClearBtn: { fontSize: 12, padding: '7px 10px', border: '1px solid #ddd', borderRadius: 6, background: 'transparent', cursor: 'pointer', color: '#888' },
   saveBtn: { padding: '8px 16px', background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+  keySlotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 },
+  keySlotCard: { background: '#fff', border: '1px solid #e8e5df', borderRadius: 10, padding: '14px 16px' },
+  keySlotLabel: { fontSize: 13, fontWeight: 700, color: '#18212f', marginBottom: 8 },
+  keySlotSelect: { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '8px 10px', border: '1px solid #ddd', borderRadius: 7, background: '#fff' },
 }
 
 

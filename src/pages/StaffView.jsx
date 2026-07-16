@@ -142,6 +142,7 @@ export default function StaffView() {
   const [rooms, setRooms] = useState([])
   const [bookings, setBookings] = useState([])
   const [housekeeping, setHousekeeping] = useState({})
+  const [keyCabinet, setKeyCabinet] = useState([])
   const TODAY = useToday()
   const [weekStart, setWeekStart] = useState(() => startOfWeek(TODAY, { weekStartsOn: 1 }))
   const [view, setView] = useState('today')
@@ -159,16 +160,17 @@ export default function StaffView() {
   const isBralanda = propertyId === 'bralanda'
 
   useEffect(() => {
-    setRooms([]); setBookings([]); setHousekeeping({})
+    setRooms([]); setBookings([]); setHousekeeping({}); setKeyCabinet([])
     supabase.from('rooms').select('*').eq('property_id', propertyId).then(({ data }) => setRooms(sortRooms(data || [])))
     supabase.from('bookings').select('*').eq('property_id', propertyId).then(({ data }) => setBookings((data || []).filter(isActiveBooking)))
     fetchHousekeeping()
+    loadKeyCabinet()
 
     // Bokningar uppdateras nu live via Supabase Realtime istället för polling.
     const unsubscribe = subscribeToBookings(setBookings, propertyId)
 
-    // Städstatus saknar realtime — behåll lätt polling för housekeeping.
-    const interval = setInterval(() => { fetchHousekeeping() }, 30000)
+    // Städstatus och nyckelskåp saknar realtime — behåll lätt polling.
+    const interval = setInterval(() => { fetchHousekeeping(); loadKeyCabinet() }, 30000)
     return () => { unsubscribe(); clearInterval(interval) }
   }, [propertyId])
 
@@ -192,6 +194,21 @@ export default function StaffView() {
     ;(data || []).forEach(h => { map[`${h.room_id}_${h.date}`] = h })
     setHousekeeping(map)
   }, [propertyId])
+
+  const loadKeyCabinet = useCallback(async () => {
+    const { data } = await supabase.from('key_cabinet').select('*').eq('property_id', propertyId).order('slot_number')
+    setKeyCabinet(data || [])
+  }, [propertyId])
+
+  async function setKeySlotRoom(slotNumber, roomId) {
+    const { data, error } = await supabase
+      .from('key_cabinet')
+      .upsert({ property_id: propertyId, slot_number: slotNumber, room_id: roomId || null, updated_at: new Date().toISOString() }, { onConflict: 'property_id,slot_number' })
+      .select()
+      .single()
+    if (error) { setErrorMsg('Kunde inte spara — kontrollera nätverket och försök igen.'); return }
+    if (data) setKeyCabinet(prev => prev.map(k => k.slot_number === slotNumber ? data : k))
+  }
 
   async function upsertHK(roomId, date, patch) {
     const key = `${roomId}_${date}`
@@ -410,6 +427,9 @@ export default function StaffView() {
               <div style={{ ...n.tabs, ...(isMobile ? n.tabsMobile : {}) }}>
                 <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'today' ? n.tabActive : {}) }} onClick={() => setView('today')}>Idag</button>
                 <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'week' ? n.tabActive : {}) }} onClick={() => setView('week')}>Kalender</button>
+                {isBralanda && (
+                  <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'keys' ? n.tabActive : {}) }} onClick={() => setView('keys')}>I nyckelskåpet</button>
+                )}
               </div>
               <button style={{ ...n.signout, ...(isMobile ? n.signoutMobile : {}) }} onClick={signOut}>Logga ut</button>
             </div>
@@ -689,6 +709,34 @@ export default function StaffView() {
                     ? <span style={{ color, fontSize: 11, fontWeight: 700 }}>{label[0]}</span>
                     : <div style={{ width: 26, height: 12, borderRadius: 999, background: color, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.45)' }} />}
                   <span style={cal.legendText}>{label.replace(/^[●$]\s*/, '')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === 'keys' && isBralanda && (
+          <div>
+            <div style={{ ...p.viewHeader, ...(isMobile ? p.viewHeaderMobile : {}) }}>
+              <div>
+                <div style={p.kicker}>Nyckelskåp</div>
+                <div style={{ ...p.dateText, fontSize: 24 }}>I nyckelskåpet</div>
+              </div>
+              <div style={{ ...p.heroChip, ...(isMobile ? p.heroChipMobile : {}) }}>Ange vilket rums nycklar som ligger var</div>
+            </div>
+
+            <div style={p.keySlotGrid}>
+              {keyCabinet.map(slot => (
+                <div key={slot.slot_number} style={p.keySlotCard}>
+                  <div style={p.keySlotLabel}>Skåp {slot.slot_number}</div>
+                  <select
+                    style={p.keySlotSelect}
+                    value={slot.room_id || ''}
+                    onChange={e => setKeySlotRoom(slot.slot_number, e.target.value)}
+                  >
+                    <option value="">Tomt</option>
+                    {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
                 </div>
               ))}
             </div>
@@ -1325,6 +1373,10 @@ const p = {
     marginBottom: 10,
     cursor: 'pointer',
   },
+  keySlotGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 },
+  keySlotCard: { ...glassPanel, borderRadius: 20, padding: '16px 18px', background: 'rgba(255,255,255,0.70)' },
+  keySlotLabel: { fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 },
+  keySlotSelect: { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '9px 10px', border: `1px solid ${C.lineStrong}`, borderRadius: 9, background: '#fff' },
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
   cardRoom: { fontSize: 15, fontWeight: 700, color: C.text },
   cardType: { fontSize: 12, color: C.faint, fontWeight: 500 },
