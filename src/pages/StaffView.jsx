@@ -155,6 +155,7 @@ export default function StaffView() {
   const [manualBookingModal, setManualBookingModal] = useState(false)
   const [cleaningStatusModal, setCleaningStatusModal] = useState(false)
   const [checkinStatusModal, setCheckinStatusModal] = useState(false)
+  const [checkoutStatusModal, setCheckoutStatusModal] = useState(false)
   const isMobile = useIsMobile()
   // Redigering/tillägg av bokningar, rumstilldelning, städ&kort/incheckad-etiketter
   // och betald-bocken är just nu bara aktiverade för Brålanda — Vänersborg oförändrat.
@@ -414,6 +415,17 @@ export default function StaffView() {
         />
       )}
 
+      {checkoutStatusModal && (
+        <CheckoutListModal
+          checkouts={checkouts}
+          rooms={rooms}
+          housekeeping={housekeeping}
+          todayStr={todayStr}
+          onUpsertHK={upsertHK}
+          onClose={() => setCheckoutStatusModal(false)}
+        />
+      )}
+
       <div style={n.navShell}>
         <div style={n.nav}>
           <div style={{ ...n.navInner, ...(isMobile ? n.navInnerMobile : {}) }}>
@@ -462,7 +474,7 @@ export default function StaffView() {
             </div>
 
             <div style={{ ...p.statsGrid, ...(isMobile ? p.statsGridMobile : {}) }}>
-              <StatTile icon="↑" label="Utcheckningar" value={checkouts.length} color={C.red} />
+              <StatTile icon="↑" label="Utcheckningar" value={checkouts.length} color={C.red} onClick={() => setCheckoutStatusModal(true)} />
               <StatTile
                 icon="✓"
                 label="Städning klar"
@@ -480,69 +492,70 @@ export default function StaffView() {
                 onClick={() => setCheckinStatusModal(true)}
               />
               <StatTile icon="●" label="Bor kvar" value={stays.length} color={C.purple} />
-              <StatTile icon="⌂" label="Långtidsboende" value={longTermToday.length} color={C.amber} />
             </div>
 
-            <TodaySection label="Utcheckningar & städning" count={checkouts.length} color={C.red}>
-              {checkouts.length === 0
-                ? <Empty text="Inga utcheckningar idag" />
-                : checkouts.map(b => {
-                    const hk = housekeeping[`${b.room_id}_${todayStr}`]
-                    const cs = hk?.cleaning_status || 'pending'
-                    return (
-                      <TodayCard key={b.id} b={b} rooms={rooms} type="checkout" color={C.red} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields}>
-                        {b.room_id ? (
-                          <div style={p.actions}>
-                            <Btn
-                              label={cs === 'done' ? (isBralanda ? '✓ Städat & kort klart' : '✓ Städat') : cs === 'in_progress' ? 'Städar…' : (isBralanda ? 'Markera städat & kort' : 'Markera städat')}
-                              done={cs === 'done'}
-                              active={cs === 'in_progress'}
-                              onClick={e => { e.stopPropagation(); toggleCleaning(b.room_id, todayStr) }}
-                            />
-                            <Btn
-                              label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
-                              done={hk?.checkout_done}
-                              onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done }) }}
-                            />
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum {isBralanda ? '– klicka på kortet' : 'i Admin-vyn'} för att aktivera städning</div>
-                        )}
-                      </TodayCard>
-                    )
-                  })}
-            </TodaySection>
+            <div style={isMobile ? undefined : p.todayColumns}>
+              <TodaySection label="Utcheckningar & städning" count={checkouts.length} color={C.red}>
+                {checkouts.length === 0
+                  ? <Empty text="Inga utcheckningar idag" />
+                  : checkouts.map(b => {
+                      const hk = housekeeping[`${b.room_id}_${todayStr}`]
+                      const cs = hk?.cleaning_status || 'pending'
+                      return (
+                        <TodayCard key={b.id} b={b} rooms={rooms} type="checkout" color={C.red} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields}>
+                          {b.room_id ? (
+                            <div style={p.actions}>
+                              <Btn
+                                label={cs === 'done' ? (isBralanda ? '✓ Städat & kort klart' : '✓ Städat') : cs === 'in_progress' ? 'Städar…' : (isBralanda ? 'Markera städat & kort' : 'Markera städat')}
+                                done={cs === 'done'}
+                                active={cs === 'in_progress'}
+                                onClick={e => { e.stopPropagation(); toggleCleaning(b.room_id, todayStr) }}
+                              />
+                              <Btn
+                                label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
+                                done={hk?.checkout_done}
+                                onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done }) }}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum {isBralanda ? '– klicka på kortet' : 'i Admin-vyn'} för att aktivera städning</div>
+                          )}
+                        </TodayCard>
+                      )
+                    })}
+              </TodaySection>
 
-            <TodaySection label="Incheckningar" count={checkins.length} color={C.blue}>
-              {checkins.length === 0
-                ? <Empty text="Inga incheckningar idag" />
-                : checkins.map(b => {
-                    const hk = housekeeping[`${b.room_id}_${todayStr}`]
-                    return (
-                      <TodayCard key={b.id} b={b} rooms={rooms} type="checkin" color={C.blue} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields}>
-                        {b.room_id ? (
-                          <div style={p.actions}>
-                            <Btn
-                              label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
-                              done={hk?.checkin_done}
-                              onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done }) }}
-                            />
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum {isBralanda ? '– klicka på kortet' : 'i Admin-vyn'} för att aktivera incheckning</div>
-                        )}
-                      </TodayCard>
-                    )
-                  })}
-            </TodaySection>
+              <TodaySection label="Incheckningar" count={checkins.length} color={C.blue}>
+                {checkins.length === 0
+                  ? <Empty text="Inga incheckningar idag" />
+                  : checkins.map(b => {
+                      const hk = housekeeping[`${b.room_id}_${todayStr}`]
+                      return (
+                        <TodayCard key={b.id} b={b} rooms={rooms} type="checkin" color={C.blue} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields}>
+                          {b.room_id ? (
+                            <div style={p.actions}>
+                              <Btn
+                                label={hk?.checkin_done ? '✓ Incheckad' : 'Markera incheckad'}
+                                done={hk?.checkin_done}
+                                onClick={e => { e.stopPropagation(); upsertHK(b.room_id, todayStr, { checkin_done: !hk?.checkin_done }) }}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>Tilldela rum {isBralanda ? '– klicka på kortet' : 'i Admin-vyn'} för att aktivera incheckning</div>
+                          )}
+                        </TodayCard>
+                      )
+                    })}
+              </TodaySection>
 
-            <TodaySection label="Bor kvar" count={stays.length} color={C.purple}>
-              {stays.length === 0
-                ? <Empty text="Inga gäster bor kvar" />
-                : stays.map(b => (
-                    <TodayCard key={b.id} b={b} rooms={rooms} type="stay" color={C.purple} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields} />
-                  ))}
-            </TodaySection>
+              <TodaySection label="Bor kvar" count={stays.length} color={C.purple}>
+                {stays.length === 0
+                  ? <Empty text="Inga gäster bor kvar" />
+                  : stays.map(b => (
+                      <TodayCard key={b.id} b={b} rooms={rooms} type="stay" color={C.purple} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields} />
+                    ))}
+              </TodaySection>
+            </div>
 
             {longTermToday.length > 0 && (
               <TodaySection label="Långtidsboende" count={longTermToday.length} color={C.amber}>
@@ -1139,6 +1152,47 @@ function CheckinStatusModal({ checkins, rooms, housekeeping, todayStr, onUpsertH
   )
 }
 
+function CheckoutListModal({ checkouts, rooms, housekeeping, todayStr, onUpsertHK, onClose }) {
+  const roomName = id => rooms.find(r => r.id === id)?.name || null
+  const sorted = [...checkouts].sort((a, b) => (parseInt(a.room_id, 10) || 0) - (parseInt(b.room_id, 10) || 0))
+
+  return (
+    <div style={m.overlay} onClick={onClose}>
+      <div style={{ ...m.sheet, maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+        <div style={m.top}>
+          <div style={{ ...m.heroRoom, padding: 0 }}>Utcheckningar idag</div>
+          <button style={m.closeBtn} onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{ padding: '4px 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sorted.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.muted, padding: '12px 0' }}>Inga utcheckningar idag</div>
+          ) : (
+            sorted.map(b => {
+              const hk = housekeeping[`${b.room_id}_${todayStr}`]
+              return (
+                <div key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.line}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{b.guest_name}</div>
+                    <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>{roomName(b.room_id) || 'Ej tilldelat rum'}</div>
+                  </div>
+                  {b.room_id && (
+                    <ModalBtn
+                      label={hk?.checkout_done ? '✓ Utcheckad' : 'Markera utcheckad'}
+                      done={hk?.checkout_done}
+                      onClick={() => onUpsertHK(b.room_id, todayStr, { checkout_done: !hk?.checkout_done })}
+                    />
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function InfoTile({ label, value, wide }) {
   return (
     <div style={{ ...m.tile, ...(wide ? { gridColumn: 'span 2' } : {}) }}>
@@ -1423,6 +1477,7 @@ const p = {
   statValue: { fontSize: 30, fontWeight: 700, color: C.text, lineHeight: 1.02, letterSpacing: '-0.03em' },
   statLabel: { fontSize: 12, color: C.muted, marginTop: 8, fontWeight: 600 },
   section: { marginBottom: 30 },
+  todayColumns: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, alignItems: 'start' },
   sectionHead: { display: 'flex', alignItems: 'center', marginBottom: 12 },
   sectionLabel: { fontSize: 13, fontWeight: 700, color: C.text, textTransform: 'uppercase', letterSpacing: '0.09em' },
   sectionCount: { marginLeft: 8, fontSize: 13, color: C.faint, fontWeight: 600 },
