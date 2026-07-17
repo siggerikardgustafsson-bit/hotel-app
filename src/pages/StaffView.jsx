@@ -324,6 +324,10 @@ export default function StaffView() {
   const checkinsDoneCount = checkins.filter(b => b.room_id && housekeeping[`${b.room_id}_${todayStr}`]?.checkin_done).length
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
   const occupiedRoomIds = new Set(stays.filter(b => b.room_id).map(b => b.room_id))
+  // Alla som sover här i natt (redan incheckade eller checkar in idag, inte utcheckade idag) äter frukost imorgon.
+  const breakfastTomorrowCount = bookings
+    .filter(b => b.checkin <= todayStr && b.checkout > todayStr)
+    .reduce((sum, b) => sum + (parseInt(b.people, 10) || 0), 0)
   const activeRooms = rooms.filter(r => !r.out_of_order)
   // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
   const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && roomCleanStatus(r, housekeeping, bookings, todayStr) !== 'done')
@@ -511,6 +515,7 @@ export default function StaffView() {
                 onClick={() => setCheckinStatusModal(true)}
               />
               <StatTile icon="●" label="Bor kvar" value={stays.length} color={C.purple} />
+              <StatTile icon="☕" label="Frukost imorgon" value={breakfastTomorrowCount} color={C.amber} />
             </div>
 
             <div style={isMobile ? undefined : p.todayColumns}>
