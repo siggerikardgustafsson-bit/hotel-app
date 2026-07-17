@@ -34,6 +34,25 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
+// Städstatus ska bestå tills en gäst faktiskt bott i rummet och checkat ut igen —
+// inte nollställas bara för att kalenderdygnet bytt (annars blir tomma, redan
+// städade rum "smutsiga" i onödan varje morgon).
+function roomCleanStatus(room, housekeeping, bookings, todayStr) {
+  const rows = Object.values(housekeeping).filter(h => h.room_id === room.id && h.date <= todayStr)
+  if (rows.length === 0) return undefined
+
+  const lastCheckout = bookings
+    .filter(b => b.room_id === room.id && b.checkout && b.checkout <= todayStr)
+    .map(b => b.checkout)
+    .sort()
+    .pop()
+
+  const relevant = lastCheckout ? rows.filter(h => h.date >= lastCheckout) : rows
+  if (relevant.length === 0) return undefined
+
+  return relevant.reduce((a, b) => (a.date > b.date ? a : b)).cleaning_status
+}
+
 // Ur drift-rum sorteras alltid sist, oavsett övriga kriterier.
 function roomOutOfOrderRank(room) {
   return room?.out_of_order ? 1 : 0
@@ -220,9 +239,9 @@ export default function AdminView() {
   }
 
   function toggleCleaning(roomId, date) {
-    const key = `${roomId}_${date}`
-    const cur = housekeeping[key]
-    upsertHK(roomId, date, { cleaning_status: cur?.cleaning_status === 'done' ? 'pending' : 'done' })
+    const room = rooms.find(r => r.id === roomId)
+    const current = room ? roomCleanStatus(room, housekeeping, bookings, date) : undefined
+    upsertHK(roomId, date, { cleaning_status: current === 'done' ? 'pending' : 'done' })
   }
 
   async function updateBookingFields(id, patch) {
@@ -467,7 +486,7 @@ export default function AdminView() {
   )
   const activeRooms = rooms.filter(r => !r.out_of_order)
   // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
-  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && roomCleanStatus(r, housekeeping, bookings, todayStr) !== 'done')
   const cleanedCount = activeRooms.length - notCleanedRooms.length
 
   const searchTerm = bookingSearch.trim().toLowerCase()
@@ -665,10 +684,10 @@ export default function AdminView() {
 
             {adminDisplayRooms.map(room => {
               const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
-              const hk = housekeeping[`${room.id}_${todayStr}`]
+              const roomStatus = roomCleanStatus(room, housekeeping, bookings, todayStr)
               const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
               const isOutOfOrder = isBralanda && !!room.out_of_order
-              const isCleaned = isBralanda && hk?.cleaning_status === 'done'
+              const isCleaned = isBralanda && roomStatus === 'done'
               return (
                 <div key={room.id} style={{ ...ac.row, ...(isCleaned ? ac.rowCleaned : {}), ...(isOutOfOrder ? ac.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                   <div style={{ ...ac.roomLabel, ...(isCleaned ? ac.roomLabelCleaned : {}) }}>
@@ -679,11 +698,11 @@ export default function AdminView() {
                     {isBralanda && (
                       <div style={ac.hkRow}>
                         <button
-                          style={{ ...ac.hkPill, ...(hk?.cleaning_status === 'done' ? ac.hkPillDone : {}) }}
+                          style={{ ...ac.hkPill, ...(isCleaned ? ac.hkPillDone : {}) }}
                           onClick={() => toggleCleaning(room.id, todayStr)}
                           title="Städat & nyckelkort finns – rummet redo för ny gäst"
                         >
-                          {hk?.cleaning_status === 'done' ? '✓ Städat & kort' : 'Markera städat & kort'}
+                          {isCleaned ? '✓ Städat & kort' : 'Markera städat & kort'}
                         </button>
                       </div>
                     )}

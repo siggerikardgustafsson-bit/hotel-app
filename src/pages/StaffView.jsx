@@ -71,6 +71,25 @@ function roomSortNumber(room) {
   return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
 }
 
+// Städstatus ska bestå tills en gäst faktiskt bott i rummet och checkat ut igen —
+// inte nollställas bara för att kalenderdygnet bytt (annars blir tomma, redan
+// städade rum "smutsiga" i onödan varje morgon).
+function roomCleanStatus(room, housekeeping, bookings, todayStr) {
+  const rows = Object.values(housekeeping).filter(h => h.room_id === room.id && h.date <= todayStr)
+  if (rows.length === 0) return undefined
+
+  const lastCheckout = bookings
+    .filter(b => b.room_id === room.id && b.checkout && b.checkout <= todayStr)
+    .map(b => b.checkout)
+    .sort()
+    .pop()
+
+  const relevant = lastCheckout ? rows.filter(h => h.date >= lastCheckout) : rows
+  if (relevant.length === 0) return undefined
+
+  return relevant.reduce((a, b) => (a.date > b.date ? a : b)).cleaning_status
+}
+
 // Ur drift-rum sorteras alltid sist, oavsett övriga kriterier.
 function roomOutOfOrderRank(room) {
   return room?.out_of_order ? 1 : 0
@@ -224,10 +243,9 @@ export default function StaffView() {
   }
 
   async function toggleCleaning(roomId, date) {
-    const key = `${roomId}_${date}`
-    const cur = housekeeping[key]
-    const next = cur?.cleaning_status === 'done' ? 'pending' : 'done'
-    await upsertHK(roomId, date, { cleaning_status: next })
+    const room = rooms.find(r => r.id === roomId)
+    const current = room ? roomCleanStatus(room, housekeeping, bookings, date) : undefined
+    await upsertHK(roomId, date, { cleaning_status: current === 'done' ? 'pending' : 'done' })
   }
 
   async function assignRoom(bookingId, roomId) {
@@ -308,7 +326,7 @@ export default function StaffView() {
   const occupiedRoomIds = new Set(stays.filter(b => b.room_id).map(b => b.room_id))
   const activeRooms = rooms.filter(r => !r.out_of_order)
   // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
-  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && housekeeping[`${r.id}_${todayStr}`]?.cleaning_status !== 'done')
+  const notCleanedRooms = activeRooms.filter(r => !occupiedRoomIds.has(r.id) && roomCleanStatus(r, housekeeping, bookings, todayStr) !== 'done')
   const cleanedCount = activeRooms.length - notCleanedRooms.length
   const longTermToday = rooms.filter(r => isLongTermActive(r, todayStr))
   const longTermWeek = rooms.filter(r => isLongTermActiveInDays(r, days))
@@ -373,6 +391,7 @@ export default function StaffView() {
         <BookingModal
           booking={modal}
           rooms={rooms}
+          bookings={bookings}
           housekeeping={housekeeping}
           onClose={() => setModal(null)}
           onToggleCleaning={toggleCleaning}
@@ -500,7 +519,8 @@ export default function StaffView() {
                   ? <Empty text="Inga utcheckningar idag" />
                   : checkouts.map(b => {
                       const hk = housekeeping[`${b.room_id}_${todayStr}`]
-                      const cs = hk?.cleaning_status || 'pending'
+                      const room = rooms.find(r => r.id === b.room_id)
+                      const cs = (room && roomCleanStatus(room, housekeeping, bookings, todayStr)) || 'pending'
                       return (
                         <TodayCard key={b.id} b={b} rooms={rooms} type="checkout" color={C.red} onClick={() => setModal(b)} showPaid={isBralanda} onTogglePaid={updateBookingFields}>
                           {b.room_id ? (
@@ -616,10 +636,9 @@ export default function StaffView() {
 
               {staffDisplayRooms.map(room => {
                 const pixels = getVisibleBookings(room.id).map(b => bookingToPixels(b)).filter(Boolean)
-                const hk = housekeeping[`${room.id}_${todayStr}`]
                 const rowHeight = isBralanda ? ROW_HEIGHT_BRALANDA : ROW_HEIGHT
                 const isOutOfOrder = isBralanda && !!room.out_of_order
-                const isCleaned = isBralanda && hk?.cleaning_status === 'done'
+                const isCleaned = isBralanda && roomCleanStatus(room, housekeeping, bookings, todayStr) === 'done'
                 return (
                   <div key={room.id} style={{ ...cal.row, ...(isCleaned ? cal.rowCleaned : {}), ...(isOutOfOrder ? cal.rowOutOfOrder : {}), height: rowHeight, minWidth: calendarBaseWidth }}>
                     <div style={{ ...cal.roomLabel, ...(isCleaned ? cal.roomLabelCleaned : {}) }}>
@@ -787,9 +806,10 @@ export default function StaffView() {
   )
 }
 
-function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleaning, onUpsertHK, onAssign, onDelete, onUpdate, isBralanda, saving, todayStr }) {
+function BookingModal({ booking: b, rooms, bookings, housekeeping, onClose, onToggleCleaning, onUpsertHK, onAssign, onDelete, onUpdate, isBralanda, saving, todayStr }) {
   const room = rooms.find(r => r.id === b.room_id)
   const hk = housekeeping[`${b.room_id}_${todayStr}`]
+  const roomStatus = room ? roomCleanStatus(room, housekeeping, bookings, todayStr) : undefined
   const isOut = b.checkout === todayStr
   const isIn = b.checkin === todayStr
   const nights = differenceInDays(parseISO(b.checkout), parseISO(b.checkin))
@@ -799,9 +819,9 @@ function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleani
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState(null)
 
-  const cleanLabel = hk?.cleaning_status === 'done'
+  const cleanLabel = roomStatus === 'done'
     ? (isBralanda ? '✓ Städat & kort klart' : '✓ Städning klar')
-    : hk?.cleaning_status === 'in_progress' ? 'Städar…' : (isBralanda ? 'Markera städat & kort' : 'Markera städat')
+    : roomStatus === 'in_progress' ? 'Städar…' : (isBralanda ? 'Markera städat & kort' : 'Markera städat')
 
   function startEditing() {
     setForm({
@@ -981,8 +1001,8 @@ function BookingModal({ booking: b, rooms, housekeeping, onClose, onToggleCleani
                   <>
                     <ModalBtn
                       label={cleanLabel}
-                      done={hk?.cleaning_status === 'done'}
-                      active={hk?.cleaning_status === 'in_progress'}
+                      done={roomStatus === 'done'}
+                      active={roomStatus === 'in_progress'}
                       onClick={() => onToggleCleaning(b.room_id, todayStr)}
                     />
                     <ModalBtn
