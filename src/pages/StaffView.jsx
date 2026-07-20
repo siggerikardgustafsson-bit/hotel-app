@@ -496,16 +496,18 @@ export default function StaffView() {
               <div style={{ ...p.heroChip, ...(isMobile ? p.heroChipMobile : {}) }}>Fokus för personalen idag</div>
             </div>
 
-            <div style={{ ...p.statsGrid, ...(isMobile ? p.statsGridMobile : {}) }}>
+            <div style={{ ...p.statsGrid, ...(isMobile ? p.statsGridMobile : {}), gridTemplateColumns: isMobile ? undefined : `repeat(${isBralanda ? 5 : 4}, minmax(0, 1fr))` }}>
               <StatTile icon="↑" label="Utcheckningar" value={checkouts.length} color={C.red} onClick={() => setCheckoutStatusModal(true)} />
-              <StatTile
-                icon="✓"
-                label="Städning klar"
-                value={`${cleanedCount} / ${activeRooms.length}`}
-                color={C.green}
-                done={cleanedCount === activeRooms.length && activeRooms.length > 0}
-                onClick={() => setCleaningStatusModal(true)}
-              />
+              {isBralanda && (
+                <StatTile
+                  icon="✓"
+                  label="Städning klar"
+                  value={`${cleanedCount} / ${activeRooms.length}`}
+                  color={C.green}
+                  done={cleanedCount === activeRooms.length && activeRooms.length > 0}
+                  onClick={() => setCleaningStatusModal(true)}
+                />
+              )}
               <StatTile
                 icon="↓"
                 label="Incheckningar"
