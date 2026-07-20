@@ -325,8 +325,17 @@ export default function StaffView() {
   const stays = bookings.filter(b => b.checkin < todayStr && b.checkout > todayStr)
   const occupiedRoomIds = new Set(stays.filter(b => b.room_id).map(b => b.room_id))
   // Alla som sover här i natt (redan incheckade eller checkar in idag, inte utcheckade idag) äter frukost imorgon.
+  // Multi-rumsbokningar delas upp i en rad per rum men "people" är hela sällskapets storlek på varje
+  // rad — räkna bara en gång per ursprunglig bokning, inte en gång per rumsrad.
+  const breakfastSeenIds = new Set()
   const breakfastTomorrowCount = bookings
     .filter(b => b.checkin <= todayStr && b.checkout > todayStr)
+    .filter(b => {
+      const key = b.multi_room_original_id || b.id
+      if (breakfastSeenIds.has(key)) return false
+      breakfastSeenIds.add(key)
+      return true
+    })
     .reduce((sum, b) => sum + (parseInt(b.people, 10) || 0), 0)
   const activeRooms = rooms.filter(r => !r.out_of_order)
   // Rum med gäst som bor kvar (inte in/utcheckning idag) behöver ingen städkontroll just nu.
