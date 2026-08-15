@@ -19,6 +19,8 @@ export const isStaffRoute = typeof window !== 'undefined' && window.location.pat
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  // 'missing_env' | 'signin_error:<message>' | null
+  const [staffAutoLoginIssue, setStaffAutoLoginIssue] = useState(null)
 
   useEffect(() => {
     async function init() {
@@ -29,8 +31,18 @@ export function AuthProvider({ children }) {
         return
       }
 
-      if (isStaffRoute && STAFF_EMAIL && STAFF_PASSWORD) {
-        const { data } = await supabase.auth.signInWithPassword({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
+      if (isStaffRoute) {
+        if (!STAFF_EMAIL || !STAFF_PASSWORD) {
+          setStaffAutoLoginIssue('missing_env')
+          setLoading(false)
+          return
+        }
+        const { data, error } = await supabase.auth.signInWithPassword({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
+        if (error) {
+          setStaffAutoLoginIssue(`signin_error:${error.message}`)
+          setLoading(false)
+          return
+        }
         setUser(data?.user ?? null)
         setLoading(false)
         return
@@ -49,7 +61,7 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.email === ADMIN_EMAIL
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading }}>
+    <AuthContext.Provider value={{ user, isAdmin, loading, staffAutoLoginIssue }}>
       {children}
     </AuthContext.Provider>
   )
