@@ -478,9 +478,7 @@ export default function StaffView() {
             </div>
 
             <div style={{ ...n.navRight, ...(isMobile ? n.navRightMobile : {}) }}>
-              {isBralanda && (
-                <button style={{ ...n.addBtn, ...(isMobile ? n.addBtnMobile : {}) }} onClick={() => setManualBookingModal(true)}>+ Lägg till bokning</button>
-              )}
+              <button style={{ ...n.addBtn, ...(isMobile ? n.addBtnMobile : {}) }} onClick={() => setManualBookingModal(true)}>+ Lägg till bokning</button>
               <div style={{ ...n.tabs, ...(isMobile ? n.tabsMobile : {}) }}>
                 <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'today' ? n.tabActive : {}) }} onClick={() => setView('today')}>Idag</button>
                 <button style={{ ...n.tab, ...(isMobile ? n.tabMobile : {}), ...(view === 'week' ? n.tabActive : {}) }} onClick={() => setView('week')}>Kalender</button>
